@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"hermit/internal/store"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type DashboardStats struct {
@@ -99,7 +102,7 @@ func (s *Service) ListSyncSources(ctx context.Context) ([]SyncSourceView, error)
 	return sources, nil
 }
 
-func (s *Service) AddSyncSource(ctx context.Context, name, upstreamURL string) (SyncSourceView, error) {
+func (s *Service) AddSyncSource(ctx context.Context, name, upstreamURL, actor string) (SyncSourceView, error) {
 	name = strings.TrimSpace(name)
 	upstreamURL = strings.TrimSpace(upstreamURL)
 	if name == "" {
@@ -117,7 +120,7 @@ func (s *Service) AddSyncSource(ctx context.Context, name, upstreamURL string) (
 		return SyncSourceView{}, err
 	}
 
-	if err := s.store.UpsertRepoMember(ctx, repo.ID, "*", store.RoleRead); err != nil {
+	if err := s.store.UpsertRepoMember(ctx, repo.ID, WildcardSubject, store.RoleRead, actor); err != nil {
 		return SyncSourceView{}, err
 	}
 
@@ -200,13 +203,46 @@ func mapRoleFromDB(dbRole string) string {
 }
 
 type RepoMemberView struct {
-	RepoID   string `json:"repoId"`
-	RepoName string `json:"repoName"`
-	Subject  string `json:"subject"`
-	Role     string `json:"role"`
+	RepoID    string    `json:"repoId"`
+	RepoName  string    `json:"repoName"`
+	Subject   string    `json:"subject"`
+	Role      string    `json:"role"`
+	GrantedBy string    `json:"grantedBy"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-func (s *Service) AssignRepoRole(ctx context.Context, repoID string, subject string, role string) error {
+func toRepoMemberView(m store.RepoMember) RepoMemberView {
+	return RepoMemberView{
+		RepoID:    m.RepoID.String(),
+		RepoName:  m.RepoName,
+		Subject:   m.Subject,
+		Role:      mapRoleFromDB(m.Role),
+		GrantedBy: m.GrantedBy,
+		CreatedAt: m.CreatedAt,
+		UpdatedAt: m.UpdatedAt,
+	}
+}
+
+// validateRoleSubject accepts '*', an existing user, or an "ldap:" subject
+// (an LDAP user may be granted a role before their first login).
+func (s *Service) validateRoleSubject(ctx context.Context, subject string) error {
+	if subject == WildcardSubject || strings.HasPrefix(subject, LDAPSubjectPrefix) {
+		if subject == LDAPSubjectPrefix {
+			return fmt.Errorf("%w: LDAP username required after %q", ErrInvalidInput, LDAPSubjectPrefix)
+		}
+		return nil
+	}
+	if _, err := s.store.GetUserByUsername(ctx, subject); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: unknown user %q (use %s<name> for LDAP users)", ErrInvalidInput, subject, LDAPSubjectPrefix)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) AssignRepoRole(ctx context.Context, repoID string, subject string, role string, grantedBy string) error {
 	uid, err := uuid.Parse(repoID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid repo id", ErrInvalidInput)
@@ -219,8 +255,11 @@ func (s *Service) AssignRepoRole(ctx context.Context, repoID string, subject str
 	if err != nil {
 		return err
 	}
+	if err := s.validateRoleSubject(ctx, subject); err != nil {
+		return err
+	}
 
-	return s.store.UpsertRepoMember(ctx, uid, subject, dbRole)
+	return s.store.UpsertRepoMember(ctx, uid, subject, dbRole, grantedBy)
 }
 
 func (s *Service) RemoveRepoRole(ctx context.Context, repoID string, subject string) error {
@@ -253,12 +292,7 @@ func (s *Service) ListRepoMembers(ctx context.Context, repoID string) ([]RepoMem
 
 	views := make([]RepoMemberView, 0, len(members))
 	for _, m := range members {
-		views = append(views, RepoMemberView{
-			RepoID:   m.RepoID.String(),
-			RepoName: m.RepoName,
-			Subject:  m.Subject,
-			Role:     mapRoleFromDB(m.Role),
-		})
+		views = append(views, toRepoMemberView(m))
 	}
 	return views, nil
 }
@@ -271,12 +305,7 @@ func (s *Service) ListAllRepoMembers(ctx context.Context) ([]RepoMemberView, err
 
 	views := make([]RepoMemberView, 0, len(members))
 	for _, m := range members {
-		views = append(views, RepoMemberView{
-			RepoID:   m.RepoID.String(),
-			RepoName: m.RepoName,
-			Subject:  m.Subject,
-			Role:     mapRoleFromDB(m.Role),
-		})
+		views = append(views, toRepoMemberView(m))
 	}
 	return views, nil
 }

@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { KeyRound } from 'lucide-react'
 import { authApi, getToken, setToken } from '#/api'
 import type { AuthProvider } from '#/api'
+import { useT } from '#/i18n'
 
 type LoginSearch = {
   redirect?: string
@@ -17,13 +18,13 @@ function normalizeRedirect(rawRedirect?: string): string {
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
-    redirect:
-      typeof search.redirect === 'string' ? search.redirect : undefined,
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
   }),
   component: LoginPage,
 })
 
 function LoginPage() {
+  const t = useT()
   const { redirect } = Route.useSearch()
   const redirectTarget = normalizeRedirect(redirect)
   const [tab, setTab] = useState<'standard' | 'ldap'>('standard')
@@ -58,7 +59,7 @@ function LoginPage() {
       setToken(result.token)
       window.location.replace(redirectTarget)
     } catch (e: any) {
-      setError(e.message || 'Invalid username or password')
+      setError(e.message || t('Invalid username or password'))
     } finally {
       setLoading(false)
     }
@@ -82,8 +83,12 @@ function LoginPage() {
       <div className="card w-full max-w-sm bg-base-200 shadow-xl border border-base-300">
         <div className="card-body">
           <div className="text-center mb-3">
-            <img src="/hermit-crab.svg" alt="hermit" className="h-12 w-12 mx-auto mb-3" />
-            <h1 className="font-bold text-xl">Sign in to Hermit</h1>
+            <img
+              src="/hermit-crab.svg"
+              alt="hermit"
+              className="h-12 w-12 mx-auto mb-3"
+            />
+            <h1 className="font-bold text-xl">{t('Sign in to Hermit')}</h1>
           </div>
 
           {!showTokenInput && (
@@ -98,7 +103,7 @@ function LoginPage() {
                       resetForm()
                     }}
                   >
-                    Standard
+                    {t('Standard')}
                   </button>
                   <button
                     role="tab"
@@ -114,7 +119,9 @@ function LoginPage() {
               )}
 
               {error && (
-                <div className="alert alert-error mb-3 text-sm py-2">{error}</div>
+                <div className="alert alert-error mb-3 text-sm py-2">
+                  {error}
+                </div>
               )}
 
               <form
@@ -126,7 +133,9 @@ function LoginPage() {
               >
                 <input
                   type="text"
-                  placeholder={tab === 'ldap' ? 'LDAP Username' : 'Username'}
+                  placeholder={
+                    tab === 'ldap' ? t('LDAP Username') : t('Username')
+                  }
                   className="input input-bordered w-full"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -135,7 +144,7 @@ function LoginPage() {
                 />
                 <input
                   type="password"
-                  placeholder="Password"
+                  placeholder={t('Password')}
                   className="input input-bordered w-full"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -146,8 +155,10 @@ function LoginPage() {
                   className="btn btn-primary w-full"
                   disabled={loading || !username.trim() || !password.trim()}
                 >
-                  {loading && <span className="loading loading-spinner loading-sm" />}
-                  Sign in
+                  {loading && (
+                    <span className="loading loading-spinner loading-sm" />
+                  )}
+                  {t('Sign in')}
                 </button>
               </form>
             </>
@@ -156,7 +167,9 @@ function LoginPage() {
           {showTokenInput && (
             <div className="flex flex-col gap-3">
               {error && (
-                <div className="alert alert-error mb-1 text-sm py-2">{error}</div>
+                <div className="alert alert-error mb-1 text-sm py-2">
+                  {error}
+                </div>
               )}
               <input
                 type="password"
@@ -165,7 +178,7 @@ function LoginPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && tokenValue.trim()) handleTokenLogin()
                 }}
-                placeholder="Paste API token..."
+                placeholder={t('Paste API token...')}
                 className="input input-bordered w-full font-mono"
                 autoFocus
               />
@@ -175,7 +188,7 @@ function LoginPage() {
                 disabled={!tokenValue.trim()}
               >
                 <KeyRound className="h-4 w-4" />
-                Authenticate
+                {t('Authenticate')}
               </button>
             </div>
           )}
@@ -188,7 +201,9 @@ function LoginPage() {
                 setError('')
               }}
             >
-              {showTokenInput ? 'Back to sign in' : 'Use API token instead'}
+              {showTokenInput
+                ? t('Back to sign in')
+                : t('Use API token instead')}
             </button>
           </div>
         </div>

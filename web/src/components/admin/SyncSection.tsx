@@ -14,14 +14,16 @@ import {
 } from 'lucide-react'
 import { api } from '#/api'
 import type { APIError, SyncSource, ProxySyncConfig } from '#/api'
+import { useFlash } from '#/components/ui/Toast'
+import { useT } from '#/i18n'
 
 export function SyncSection() {
+  const t = useT()
   const queryClient = useQueryClient()
   const [showAddForm, setShowAddForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newUrl, setNewUrl] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
+  const { setError, setSuccess } = useFlash()
 
   const { data: sourcesData, isLoading: sourcesLoading } = useQuery({
     queryKey: ['sync-sources'],
@@ -48,13 +50,18 @@ export function SyncSection() {
   })
 
   const addMutation = useMutation({
-    mutationFn: ({ name, upstreamUrl }: { name: string; upstreamUrl: string }) =>
-      api.addSyncSource(name, upstreamUrl),
+    mutationFn: ({
+      name,
+      upstreamUrl,
+    }: {
+      name: string
+      upstreamUrl: string
+    }) => api.addSyncSource(name, upstreamUrl),
     onSuccess: () => {
       setNewName('')
       setNewUrl('')
       setShowAddForm(false)
-      setSuccess('Sync source added')
+      setSuccess(t('Sync source added'))
       setError(null)
       queryClient.invalidateQueries({ queryKey: ['sync-sources'] })
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
@@ -68,7 +75,7 @@ export function SyncSection() {
   const removeMutation = useMutation({
     mutationFn: (id: string) => api.removeSyncSource(id),
     onSuccess: () => {
-      setSuccess('Sync source removed')
+      setSuccess(t('Sync source removed'))
       setError(null)
       queryClient.invalidateQueries({ queryKey: ['sync-sources'] })
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
@@ -94,41 +101,29 @@ export function SyncSection() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Sync Sources</h2>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t('Sync sources')}
+        </h1>
         <div className="flex gap-2">
           <button
             className="btn btn-sm btn-outline"
             onClick={() => setShowAddForm(!showAddForm)}
           >
             <Plus className="h-4 w-4" />
-            Add Source
+            {t('Add Source')}
           </button>
           <button
             className={`btn btn-sm btn-primary ${syncStatus?.running ? 'btn-disabled' : ''}`}
             onClick={() => triggerMutation.mutate()}
             disabled={triggerMutation.isPending || syncStatus?.running}
           >
-            <RefreshCw className={`h-4 w-4 ${syncStatus?.running ? 'animate-spin' : ''}`} />
-            {syncStatus?.running ? 'Syncing…' : 'Sync Now'}
+            <RefreshCw
+              className={`h-4 w-4 ${syncStatus?.running ? 'animate-spin' : ''}`}
+            />
+            {syncStatus?.running ? t('Syncing…') : t('Sync Now')}
           </button>
         </div>
       </div>
-
-      {error && (
-        <div className="alert alert-error">
-          <AlertCircle className="h-4 w-4" />
-          <span>{error}</span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setError(null)}>✕</button>
-        </div>
-      )}
-
-      {success && (
-        <div className="alert alert-success">
-          <CheckCircle className="h-4 w-4" />
-          <span>{success}</span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setSuccess(null)}>✕</button>
-        </div>
-      )}
 
       {syncStatus && (
         <SyncStatusCard
@@ -140,27 +135,38 @@ export function SyncSection() {
       )}
 
       <SyncConfigCard
-        onSuccess={(msg) => { setSuccess(msg); setError(null) }}
-        onError={(msg) => { setError(msg); setSuccess(null) }}
+        onSuccess={(msg) => {
+          setSuccess(msg)
+          setError(null)
+        }}
+        onError={(msg) => {
+          setError(msg)
+          setSuccess(null)
+        }}
       />
 
       {showAddForm && (
-        <div className="card bg-base-200 border">
+        <div className="card bg-base-100 border">
           <div className="card-body">
-            <h3 className="font-semibold">Add Sync Source</h3>
+            <h3 className="font-semibold">{t('Add Sync Source')}</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                addMutation.mutate({ name: newName.trim(), upstreamUrl: newUrl.trim() })
+                addMutation.mutate({
+                  name: newName.trim(),
+                  upstreamUrl: newUrl.trim(),
+                })
               }}
               className="space-y-3"
             >
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend text-xs">Name</legend>
+                  <legend className="fieldset-legend text-xs">
+                    {t('Name')}
+                  </legend>
                   <input
                     type="text"
-                    placeholder="e.g. proxy-2"
+                    placeholder={t('e.g. proxy-2')}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     className="input input-bordered w-full"
@@ -168,10 +174,12 @@ export function SyncSection() {
                   />
                 </fieldset>
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend text-xs">Upstream URL</legend>
+                  <legend className="fieldset-legend text-xs">
+                    {t('Upstream URL')}
+                  </legend>
                   <input
                     type="url"
-                    placeholder="e.g. https://clawhub.ai"
+                    placeholder={t('e.g. https://clawhub.ai')}
                     value={newUrl}
                     onChange={(e) => setNewUrl(e.target.value)}
                     className="input input-bordered w-full"
@@ -180,11 +188,19 @@ export function SyncSection() {
                 </fieldset>
               </div>
               <div className="flex gap-2">
-                <button type="submit" className="btn btn-primary btn-sm" disabled={addMutation.isPending}>
-                  {addMutation.isPending ? 'Adding…' : 'Add'}
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={addMutation.isPending}
+                >
+                  {addMutation.isPending ? t('Adding…') : t('Add')}
                 </button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddForm(false)}>
-                  Cancel
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAddForm(false)}
+                >
+                  {t('Cancel')}
                 </button>
               </div>
             </form>
@@ -192,7 +208,7 @@ export function SyncSection() {
         </div>
       )}
 
-      <div className="card bg-base-200 border">
+      <div className="card bg-base-100 border">
         <div className="card-body">
           {sourcesLoading ? (
             <div className="flex justify-center py-8">
@@ -201,19 +217,21 @@ export function SyncSection() {
           ) : sources.length === 0 ? (
             <div className="text-center py-8 text-base-content/60">
               <Globe className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              <p>No sync sources configured</p>
-              <p className="text-sm">Add a proxy upstream to start mirroring skills</p>
+              <p>{t('No sync sources configured')}</p>
+              <p className="text-sm">
+                {t('Add a proxy upstream to start mirroring skills')}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Upstream URL</th>
-                    <th>Skills</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{t('Name')}</th>
+                    <th>{t('Upstream URL')}</th>
+                    <th>{t('Skills')}</th>
+                    <th>{t('Status')}</th>
+                    <th>{t('Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -222,7 +240,9 @@ export function SyncSection() {
                       key={source.id}
                       source={source}
                       onRemove={(id) => removeMutation.mutate(id)}
-                      onToggle={(id, enabled) => toggleMutation.mutate({ id, enabled })}
+                      onToggle={(id, enabled) =>
+                        toggleMutation.mutate({ id, enabled })
+                      }
                       isRemoving={removeMutation.isPending}
                     />
                   ))}
@@ -247,13 +267,19 @@ function SyncSourceRow({
   onToggle: (id: string, enabled: boolean) => void
   isRemoving: boolean
 }) {
+  const t = useT()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
     <tr>
       <td className="font-medium">{source.name}</td>
       <td className="max-w-64 truncate text-sm text-base-content/70">
-        <a href={source.upstreamUrl} target="_blank" rel="noreferrer" className="link link-hover">
+        <a
+          href={source.upstreamUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="link link-hover"
+        >
           {source.upstreamUrl}
         </a>
       </td>
@@ -264,21 +290,42 @@ function SyncSourceRow({
           className={`btn btn-ghost btn-xs gap-1 ${source.enabled ? 'text-success' : 'text-error'}`}
         >
           {source.enabled ? (
-            <><ToggleRight className="h-4 w-4" /> Enabled</>
+            <>
+              <ToggleRight className="h-4 w-4" /> {t('Enabled')}
+            </>
           ) : (
-            <><ToggleLeft className="h-4 w-4" /> Disabled</>
+            <>
+              <ToggleLeft className="h-4 w-4" /> {t('Disabled')}
+            </>
           )}
         </button>
       </td>
       <td>
         {confirmDelete ? (
           <div className="flex gap-1 items-center">
-            <span className="text-xs">Delete?</span>
-            <button onClick={() => { onRemove(source.id); setConfirmDelete(false) }} className="btn btn-error btn-xs" disabled={isRemoving}>Yes</button>
-            <button onClick={() => setConfirmDelete(false)} className="btn btn-ghost btn-xs">No</button>
+            <span className="text-xs">{t('Delete?')}</span>
+            <button
+              onClick={() => {
+                onRemove(source.id)
+                setConfirmDelete(false)
+              }}
+              className="btn btn-error btn-xs"
+              disabled={isRemoving}
+            >
+              {t('Yes')}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="btn btn-ghost btn-xs"
+            >
+              {t('No')}
+            </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="btn btn-ghost btn-xs text-error">
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="btn btn-ghost btn-xs text-error"
+          >
             <Trash2 className="h-4 w-4" />
           </button>
         )}
@@ -295,18 +342,25 @@ function SyncStatusCard({
 }: {
   configured: boolean
   running: boolean
-  lastResult: { Repositories: number; Skills: number; Versions: number; Cached: number; Failed: number } | null
+  lastResult: {
+    Repositories: number
+    Skills: number
+    Versions: number
+    Cached: number
+    Failed: number
+  } | null
   lastError: string
 }) {
+  const t = useT()
   if (!configured) {
     return (
       <div className="card bg-warning/10 border border-warning/30">
         <div className="card-body py-3 flex-row items-center gap-3">
           <AlertCircle className="h-5 w-5 text-warning shrink-0" />
           <div>
-            <p className="font-medium text-sm">Sync is not configured</p>
+            <p className="font-medium text-sm">{t('Sync is not configured')}</p>
             <p className="text-xs text-base-content/60">
-              Add a sync source and use &ldquo;Sync Now&rdquo; to start
+              {t('Add a sync source and use “Sync Now” to start')}
             </p>
           </div>
         </div>
@@ -315,7 +369,9 @@ function SyncStatusCard({
   }
 
   return (
-    <div className={`card border ${running ? 'bg-info/10 border-info/30' : lastError ? 'bg-error/10 border-error/30' : 'bg-success/10 border-success/30'}`}>
+    <div
+      className={`card border ${running ? 'bg-info/10 border-info/30' : lastError ? 'bg-error/10 border-error/30' : 'bg-success/10 border-success/30'}`}
+    >
       <div className="card-body py-3">
         <div className="flex items-center gap-3">
           {running ? (
@@ -327,17 +383,33 @@ function SyncStatusCard({
           )}
           <div className="flex-1">
             <p className="font-medium text-sm">
-              {running ? 'Sync in progress…' : lastError ? 'Last sync had errors' : 'Sync idle'}
+              {running
+                ? t('Sync in progress…')
+                : lastError
+                  ? t('Last sync had errors')
+                  : t('Sync idle')}
             </p>
-            {lastError && <p className="text-xs text-error mt-1 line-clamp-2">{lastError}</p>}
+            {lastError && (
+              <p className="text-xs text-error mt-1 line-clamp-2">
+                {lastError}
+              </p>
+            )}
           </div>
           {lastResult && !running && (
             <div className="flex gap-4 text-xs text-base-content/60">
-              <span><strong>{lastResult.Repositories}</strong> repos</span>
-              <span><strong>{lastResult.Skills}</strong> skills</span>
-              <span><strong>{lastResult.Cached}</strong> cached</span>
+              <span>
+                <strong>{lastResult.Repositories}</strong> {t('repos')}
+              </span>
+              <span>
+                <strong>{lastResult.Skills}</strong> {t('skills')}
+              </span>
+              <span>
+                <strong>{lastResult.Cached}</strong> {t('cached')}
+              </span>
               {lastResult.Failed > 0 && (
-                <span className="text-error"><strong>{lastResult.Failed}</strong> failed</span>
+                <span className="text-error">
+                  <strong>{lastResult.Failed}</strong> {t('failed')}
+                </span>
               )}
             </div>
           )}
@@ -354,6 +426,7 @@ function SyncConfigCard({
   onSuccess: (msg: string) => void
   onError: (msg: string) => void
 }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const { data: config, isLoading } = useQuery({
     queryKey: ['proxy-sync-config'],
@@ -374,7 +447,7 @@ function SyncConfigCard({
   const saveMutation = useMutation({
     mutationFn: () => api.saveProxySyncConfig(form),
     onSuccess: () => {
-      onSuccess('Sync configuration saved')
+      onSuccess(t('Sync configuration saved'))
       queryClient.invalidateQueries({ queryKey: ['proxy-sync-config'] })
     },
     onError: (err: APIError) => onError(err.message),
@@ -383,7 +456,7 @@ function SyncConfigCard({
   if (isLoading) return null
 
   return (
-    <div className="card bg-base-200 border">
+    <div className="card bg-base-100 border">
       <div className="card-body py-3">
         <button
           className="flex items-center justify-between w-full text-left"
@@ -391,7 +464,7 @@ function SyncConfigCard({
         >
           <h3 className="font-semibold flex items-center gap-2 text-sm">
             <Settings className="h-4 w-4" />
-            Sync Settings
+            {t('Sync Settings')}
           </h3>
           <span className="text-xs text-base-content/40">
             {expanded ? '▲' : '▼'}
@@ -408,23 +481,37 @@ function SyncConfigCard({
           >
             <div className="grid grid-cols-2 gap-3">
               <fieldset className="fieldset">
-                <legend className="fieldset-legend text-xs">Page Size</legend>
+                <legend className="fieldset-legend text-xs">
+                  {t('Page Size')}
+                </legend>
                 <input
                   type="number"
                   min={1}
                   className="input input-bordered input-sm w-full"
                   value={form.page_size}
-                  onChange={(e) => setForm({ ...form, page_size: parseInt(e.target.value) || 100 })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      page_size: parseInt(e.target.value) || 100,
+                    })
+                  }
                 />
               </fieldset>
               <fieldset className="fieldset">
-                <legend className="fieldset-legend text-xs">Concurrency</legend>
+                <legend className="fieldset-legend text-xs">
+                  {t('Concurrency')}
+                </legend>
                 <input
                   type="number"
                   min={1}
                   className="input input-bordered input-sm w-full"
                   value={form.concurrency}
-                  onChange={(e) => setForm({ ...form, concurrency: parseInt(e.target.value) || 4 })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      concurrency: parseInt(e.target.value) || 4,
+                    })
+                  }
                 />
               </fieldset>
             </div>
@@ -435,7 +522,7 @@ function SyncConfigCard({
               disabled={saveMutation.isPending}
             >
               <Save className="h-3.5 w-3.5" />
-              {saveMutation.isPending ? 'Saving…' : 'Save Settings'}
+              {saveMutation.isPending ? t('Saving…') : t('Save Settings')}
             </button>
           </form>
         )}

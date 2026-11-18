@@ -39,10 +39,12 @@ func (h *Handler) ChangePassword(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
-	if err := h.svc.ChangePassword(c.Request().Context(), claims.Subject, req.OldPassword, req.NewPassword); err != nil {
+	token, err := h.svc.ChangePassword(c.Request().Context(), claims.Subject, req.OldPassword, req.NewPassword)
+	if err != nil {
 		return mapServiceError(err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"ok": true})
+	// Earlier sessions are now invalid; hand the caller a fresh one.
+	return c.JSON(http.StatusOK, map[string]any{"ok": true, "token": token})
 }
 
 func (h *Handler) PublishSkill(c echo.Context) error {
@@ -110,7 +112,7 @@ func (h *Handler) PublishSkill(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file too large")
 		}
 		files = append(files, service.PublishFileInput{
-			Path:        header.Filename,
+			Path:        uploadPath(header),
 			ContentType: header.Header.Get(echo.HeaderContentType),
 			Bytes:       data,
 		})
@@ -167,7 +169,7 @@ func (h *Handler) setDelete(c echo.Context, deleted bool) error {
 	}
 
 	slug := strings.TrimSpace(c.Param("slug"))
-	if err := h.svc.DeleteSkill(c.Request().Context(), repo, slug, deleted); err != nil {
+	if err := h.svc.DeleteSkill(c.Request().Context(), repo, auth.ActorFromClaims(claims), slug, deleted); err != nil {
 		return mapServiceError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -184,8 +186,9 @@ func (h *Handler) AdminCreateToken(c echo.Context) error {
 	}
 
 	var req struct {
-		Subject string `json:"subject"`
-		Name    string `json:"name"`
+		Subject       string `json:"subject"`
+		Name          string `json:"name"`
+		ExpiresInDays *int   `json:"expires_in_days"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
@@ -193,15 +196,16 @@ func (h *Handler) AdminCreateToken(c echo.Context) error {
 	if req.Name == "" {
 		req.Name = "admin-created"
 	}
-	rawToken, tok, err := h.svc.CreatePersonalToken(c.Request().Context(), req.Subject, req.Name, false)
+	rawToken, tok, err := h.svc.CreatePersonalToken(c.Request().Context(), req.Subject, req.Name, req.ExpiresInDays)
 	if err != nil {
 		return mapServiceError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
-		"subject": req.Subject,
-		"token":   rawToken,
-		"id":      tok.ID.String(),
-		"name":    tok.Name,
+		"subject":   req.Subject,
+		"token":     rawToken,
+		"id":        tok.ID.String(),
+		"name":      tok.Name,
+		"expiresAt": tok.ExpiresAt,
 	})
 }
 
@@ -228,19 +232,21 @@ func (h *Handler) CreateMyToken(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name          string `json:"name"`
+		ExpiresInDays *int   `json:"expires_in_days"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
-	rawToken, tok, err := h.svc.CreatePersonalToken(c.Request().Context(), claims.Subject, req.Name, claims.IsAdmin)
+	rawToken, tok, err := h.svc.CreatePersonalToken(c.Request().Context(), claims.Subject, req.Name, req.ExpiresInDays)
 	if err != nil {
 		return mapServiceError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
-		"token": rawToken,
-		"id":    tok.ID.String(),
-		"name":  tok.Name,
+		"token":      rawToken,
+		"id":         tok.ID.String(),
+		"name":       tok.Name,
+		"expires_at": tok.ExpiresAt,
 	})
 }
 

@@ -1,115 +1,263 @@
-import { useState } from 'react'
-import { Link, useRouterState } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import {
-  Shield,
+  KeyRound,
+  Languages,
+  Lock,
   LogIn,
   LogOut,
-  User,
-  Sun,
-  Moon,
+  Menu,
   Monitor,
-  Lock,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  CheckCircle,
+  Moon,
+  Search,
+  Shield,
+  Sun,
+  Upload,
+  X,
 } from 'lucide-react'
 import { useTheme } from '#/hooks/useTheme'
-import { api } from '#/api'
-import type { APIError } from '#/api'
+import { useSession } from '#/hooks/useSession'
+import { isLdapSubject, subjectLabel } from '#/api'
+import { ChangePasswordModal } from './ChangePasswordModal'
+import { LANGUAGES, msg, useLang, useT } from '#/i18n'
 
 const themeOptions = [
-  { value: 'system' as const, label: 'System', Icon: Monitor },
-  { value: 'light' as const, label: 'Light', Icon: Sun },
-  { value: 'dark' as const, label: 'Dark', Icon: Moon },
+  { value: 'system' as const, label: msg('System'), Icon: Monitor },
+  { value: 'light' as const, label: msg('Light'), Icon: Sun },
+  { value: 'dark' as const, label: msg('Dark'), Icon: Moon },
 ]
 
-export function Navbar({
-  loggedIn,
-  onSignOut,
-}: {
-  loggedIn: boolean
-  onSignOut: () => void
-}) {
+function blurActive() {
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur()
+  }
+}
+
+const navLinkClass =
+  'btn btn-ghost btn-sm font-medium text-base-content/70 hover:text-base-content'
+const navLinkActive = { className: `${navLinkClass} nav-active` }
+
+export function Navbar({ onSignOut }: { onSignOut: () => void }) {
+  const t = useT()
   const { mode, setMode } = useTheme()
+  const { lang, setLang } = useLang()
+  const { loggedIn, user, isAdmin } = useSession()
+  const userName = user ? subjectLabel(user.displayName) : undefined
+  // LDAP users change their password in the directory, not here.
+  const canChangePassword = !!user && !isLdapSubject(user.handle)
   const ActiveIcon = themeOptions.find((o) => o.value === mode)!.Icon
   const [showChangePw, setShowChangePw] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const currentPath = useRouterState({
-    select: (state) =>
-      `${state.location.pathname}${state.location.searchStr}${state.location.hash}`,
+    select: (s) =>
+      `${s.location.pathname}${s.location.searchStr}${s.location.hash}`,
   })
+  const onLogin = pathname === '/login'
+
+  useEffect(() => setMenuOpen(false), [currentPath])
+
+  const links = (
+    <>
+      <Link
+        to="/"
+        className={navLinkClass}
+        activeProps={navLinkActive}
+        activeOptions={{ exact: true, includeSearch: false }}
+      >
+        {t('Skills')}
+      </Link>
+      <Link to="/publish" className={navLinkClass} activeProps={navLinkActive}>
+        <Upload className="h-4 w-4" />
+        {t('Publish')}
+      </Link>
+      {isAdmin && (
+        <Link to="/admin" className={navLinkClass} activeProps={navLinkActive}>
+          <Shield className="h-4 w-4" />
+          {t('Administration')}
+        </Link>
+      )}
+    </>
+  )
 
   return (
     <>
-      <header className="navbar bg-base-200 border-b border-base-300 sticky top-0 z-40 px-4">
-        <div className="navbar-start">
-          <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-            <img src="/hermit-crab.svg" alt="hermit" className="h-7 w-7" />
+      <header className="app-header sticky top-0 z-40 border-b border-base-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-bold text-lg tracking-tight shrink-0"
+          >
+            <img src="/hermit-crab.svg" alt="" className="h-7 w-7" />
             <span>Hermit</span>
           </Link>
-        </div>
-        <div className="navbar-end gap-2">
-          <div className="flex gap-2">
+
+          {loggedIn && !onLogin && (
+            <nav className="hidden md:flex items-center gap-1 ml-2">
+              {links}
+            </nav>
+          )}
+
+          <div className="flex-1 flex justify-center min-w-0">
+            {loggedIn && !onLogin && <SearchBox />}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
             <div className="dropdown dropdown-end">
-              <div tabIndex={0} role="button" className="btn btn-ghost btn-sm btn-circle" aria-label="Theme">
+              <div
+                tabIndex={0}
+                role="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                aria-label={t('Theme')}
+              >
                 <ActiveIcon className="h-4 w-4" />
               </div>
-              <ul tabIndex={0} className="dropdown-content menu bg-base-200 rounded-box z-50 w-36 p-2 shadow-lg mt-2">
+              <ul
+                tabIndex={0}
+                className="dropdown-content menu bg-base-100 border border-base-300 rounded-box z-50 w-36 p-2 shadow-lg mt-2"
+              >
                 {themeOptions.map(({ value, label, Icon }) => (
                   <li key={value}>
                     <button
-                      onClick={() => { setMode(value); (document.activeElement as HTMLElement).blur() }}
-                      className={mode === value ? 'active' : ''}
+                      onClick={() => {
+                        setMode(value)
+                        blurActive()
+                      }}
+                      className={mode === value ? 'menu-active' : ''}
                     >
                       <Icon className="h-4 w-4" />
+                      {t(label)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="dropdown dropdown-end">
+              <div
+                tabIndex={0}
+                role="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                aria-label={t('Language')}
+              >
+                <Languages className="h-4 w-4" />
+              </div>
+              <ul
+                tabIndex={0}
+                className="dropdown-content menu bg-base-100 border border-base-300 rounded-box z-50 w-36 p-2 shadow-lg mt-2"
+              >
+                {LANGUAGES.map(({ value, label }) => (
+                  <li key={value}>
+                    <button
+                      lang={value}
+                      onClick={() => {
+                        setLang(value)
+                        blurActive()
+                      }}
+                      className={lang === value ? 'menu-active' : ''}
+                    >
                       {label}
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
-            <Link to="/publish" className="btn btn-ghost btn-sm">
-              Publish
-            </Link>
-            {loggedIn && (
-              <Link to="/admin" className="btn btn-ghost btn-sm">
-                <Shield className="h-4 w-4" />
-                Admin
-              </Link>
-            )}
+
             {loggedIn ? (
               <div className="dropdown dropdown-end">
-                <div tabIndex={0} role="button" className="btn btn-ghost btn-sm btn-circle">
-                  <User className="h-5 w-5" />
+                <div
+                  tabIndex={0}
+                  role="button"
+                  className="btn btn-ghost btn-sm gap-2 px-1.5"
+                  aria-label={t('Account menu')}
+                >
+                  <span className="h-7 w-7 rounded-full bg-primary/15 text-primary grid place-items-center text-xs font-bold uppercase">
+                    {userName?.[0] ?? '·'}
+                  </span>
+                  <span className="hidden lg:inline max-w-28 truncate text-sm font-medium">
+                    {userName}
+                  </span>
                 </div>
-                <ul tabIndex={0} className="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-lg mt-2">
-                  <li>
-                    <button onClick={() => { setShowChangePw(true); (document.activeElement as HTMLElement).blur() }}>
-                      <Lock className="h-4 w-4" />
-                      Change password
-                    </button>
+                <ul
+                  tabIndex={0}
+                  className="dropdown-content menu bg-base-100 border border-base-300 rounded-box z-50 w-52 p-2 shadow-lg mt-2"
+                >
+                  <li className="menu-title flex flex-row items-center gap-2 text-xs">
+                    <span className="truncate">
+                      {t('Signed in as')}{' '}
+                      <span className="text-base-content">
+                        {userName ?? '…'}
+                      </span>
+                    </span>
+                    {isAdmin && (
+                      <span className="badge badge-primary badge-xs">
+                        {t('admin')}
+                      </span>
+                    )}
                   </li>
+                  <li>
+                    <Link to="/admin/tokens" onClick={blurActive}>
+                      <KeyRound className="h-4 w-4" />
+                      {t('Access tokens')}
+                    </Link>
+                  </li>
+                  {canChangePassword && (
+                    <li>
+                      <button
+                        onClick={() => {
+                          setShowChangePw(true)
+                          blurActive()
+                        }}
+                      >
+                        <Lock className="h-4 w-4" />
+                        {t('Change password')}
+                      </button>
+                    </li>
+                  )}
                   <li>
                     <button onClick={onSignOut} className="text-error">
                       <LogOut className="h-4 w-4" />
-                      Sign out
+                      {t('Sign out')}
                     </button>
                   </li>
                 </ul>
               </div>
             ) : (
-              <Link
-                to="/login"
-                search={{ redirect: currentPath }}
-                className="btn btn-primary btn-sm"
+              !onLogin && (
+                <Link
+                  to="/login"
+                  search={{ redirect: currentPath }}
+                  className="btn btn-primary btn-sm"
+                >
+                  <LogIn className="h-4 w-4" />
+                  {t('Sign in')}
+                </Link>
+              )
+            )}
+
+            {loggedIn && !onLogin && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle md:hidden"
+                aria-label={menuOpen ? t('Close menu') : t('Open menu')}
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
               >
-                <LogIn className="h-4 w-4" />
-                Sign in
-              </Link>
+                {menuOpen ? (
+                  <X className="h-4 w-4" />
+                ) : (
+                  <Menu className="h-4 w-4" />
+                )}
+              </button>
             )}
           </div>
         </div>
+
+        {menuOpen && (
+          <nav className="md:hidden border-t border-base-300 px-4 py-2 flex flex-col items-start gap-1">
+            {links}
+          </nav>
+        )}
       </header>
 
       {showChangePw && (
@@ -119,156 +267,98 @@ export function Navbar({
   )
 }
 
-function ChangePasswordModal({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
-  const [showOld, setShowOld] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
-
-  const mutation = useMutation({
-    mutationFn: () => api.changePassword(form.oldPassword, form.newPassword),
-    onSuccess: () => {
-      setSuccess(true)
-      setError(null)
-    },
-    onError: (err: APIError) => {
-      setError(err.message)
-    },
+function SearchBox() {
+  const t = useT()
+  const navigate = useNavigate()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const urlQuery = useRouterState({
+    select: (s) =>
+      s.location.pathname === '/'
+        ? (((s.location.search as Record<string, unknown>).q as
+            | string
+            | undefined) ?? '')
+        : '',
   })
+  const [value, setValue] = useState(urlQuery)
+  const lastPushed = useRef(urlQuery)
 
-  const canSubmit =
-    form.oldPassword.length > 0 &&
-    form.newPassword.length >= 6 &&
-    form.newPassword === form.confirmPassword &&
-    !mutation.isPending
+  // Follow the URL when it changes from elsewhere (back button, links).
+  useEffect(() => {
+    if (urlQuery !== lastPushed.current) {
+      lastPushed.current = urlQuery
+      setValue(urlQuery)
+    }
+  }, [urlQuery])
 
-  if (success) {
-    return (
-      <dialog open className="modal modal-open">
-        <div className="modal-box max-w-sm text-center">
-          <div className="bg-success/10 rounded-2xl p-6 inline-block mb-4">
-            <CheckCircle className="h-10 w-10 text-success" />
-          </div>
-          <h3 className="font-bold text-lg mb-2">Password changed</h3>
-          <p className="text-sm text-base-content/60 mb-4">
-            Your password has been updated successfully.
-          </p>
-          <button className="btn btn-primary btn-sm" onClick={onClose}>
-            Done
-          </button>
-        </div>
-        <div className="modal-backdrop" onClick={onClose} />
-      </dialog>
-    )
+  const go = (q: string, replace: boolean) => {
+    const trimmed = q.trim()
+    lastPushed.current = trimmed
+    navigate({
+      to: '/',
+      search: (prev) => ({
+        q: trimmed || undefined,
+        sort: pathname === '/' ? prev.sort : undefined,
+      }),
+      replace,
+    })
   }
 
+  // Search as you type, but only while already on the list page.
+  useEffect(() => {
+    if (pathname !== '/') return
+    if (value.trim() === lastPushed.current) return
+    const timer = setTimeout(() => go(value, true), 300)
+    return () => clearTimeout(timer)
+    // `go` is recreated every render; only typing should restart the timer.
+  }, [value, pathname])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable
+      if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
-    <dialog open className="modal modal-open">
-      <div className="modal-box max-w-sm">
-        <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-          <Lock className="h-5 w-5" />
-          Change Password
-        </h3>
-
-        {error && (
-          <div className="alert alert-error text-sm py-2 mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (form.newPassword !== form.confirmPassword) {
-              setError('Passwords do not match')
-              return
+    <form
+      role="search"
+      className="w-full max-w-md"
+      onSubmit={(e) => {
+        e.preventDefault()
+        go(value, pathname === '/')
+      }}
+    >
+      <label className="input input-sm w-full bg-base-100">
+        <Search className="h-4 w-4 opacity-50" />
+        <input
+          ref={inputRef}
+          type="search"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              if (value) setValue('')
+              else inputRef.current?.blur()
             }
-            mutation.mutate()
           }}
-          className="space-y-3"
-        >
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Current Password</legend>
-            <div className="join w-full">
-              <input
-                type={showOld ? 'text' : 'password'}
-                className="input input-bordered input-sm join-item flex-1"
-                value={form.oldPassword}
-                onChange={(e) => setForm({ ...form, oldPassword: e.target.value })}
-                autoFocus
-                required
-              />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm join-item"
-                onClick={() => setShowOld(!showOld)}
-              >
-                {showOld ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </fieldset>
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">New Password</legend>
-            <div className="join w-full">
-              <input
-                type={showNew ? 'text' : 'password'}
-                placeholder="Min 6 characters"
-                className="input input-bordered input-sm join-item flex-1"
-                value={form.newPassword}
-                onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-                required
-                minLength={6}
-              />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm join-item"
-                onClick={() => setShowNew(!showNew)}
-              >
-                {showNew ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </fieldset>
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Confirm New Password</legend>
-            <input
-              type="password"
-              className={`input input-bordered input-sm w-full ${
-                form.confirmPassword && form.confirmPassword !== form.newPassword
-                  ? 'input-error'
-                  : ''
-              }`}
-              value={form.confirmPassword}
-              onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-              required
-              minLength={6}
-            />
-            {form.confirmPassword && form.confirmPassword !== form.newPassword && (
-              <p className="text-xs text-error mt-1">Passwords do not match</p>
-            )}
-          </fieldset>
-
-          <div className="modal-action mt-4">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary btn-sm"
-              disabled={!canSubmit}
-            >
-              {mutation.isPending ? (
-                <span className="loading loading-spinner loading-xs" />
-              ) : (
-                <Lock className="h-3.5 w-3.5" />
-              )}
-              {mutation.isPending ? 'Changing…' : 'Change Password'}
-            </button>
-          </div>
-        </form>
-      </div>
-      <div className="modal-backdrop" onClick={onClose} />
-    </dialog>
+          placeholder={t('Search skills')}
+          aria-label={t('Search skills')}
+          className="grow min-w-0"
+        />
+        <kbd className="kbd kbd-xs hidden sm:inline-flex opacity-60">/</kbd>
+      </label>
+    </form>
   )
 }

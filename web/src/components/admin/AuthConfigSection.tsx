@@ -1,32 +1,48 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Shield,
-  Save,
-  Trash2,
-  ToggleLeft,
-  ToggleRight,
-  AlertCircle,
-  CheckCircle,
-  Lock,
-} from 'lucide-react'
+import { Save, Trash2, ToggleLeft, ToggleRight, Lock } from 'lucide-react'
 import { authConfigApi } from '#/api'
 import type { APIError, AuthConfigItem } from '#/api'
+import { useFlash } from '#/components/ui/Toast'
+import { msg, useT } from '#/i18n'
 
 const LDAP_FIELDS = [
-  { key: 'url', label: 'LDAP URL', placeholder: 'ldap://ldap.example.com:389', required: true },
-  { key: 'base_dn', label: 'Base DN', placeholder: 'dc=example,dc=com', required: true },
-  { key: 'bind_dn', label: 'Bind DN', placeholder: 'cn=readonly,dc=example,dc=com' },
-  { key: 'bind_password', label: 'Bind Password', placeholder: '••••••••', sensitive: true },
-  { key: 'user_filter', label: 'User Filter', placeholder: '(uid={{.Username}})' },
-  { key: 'user_attr', label: 'User Attribute', placeholder: 'uid' },
-  { key: 'display_attr', label: 'Display Attribute', placeholder: 'cn' },
+  {
+    key: 'url',
+    label: msg('LDAP URL'),
+    placeholder: 'ldap://ldap.example.com:389',
+    required: true,
+  },
+  {
+    key: 'base_dn',
+    label: msg('Base DN'),
+    placeholder: 'dc=example,dc=com',
+    required: true,
+  },
+  {
+    key: 'bind_dn',
+    label: msg('Bind DN'),
+    placeholder: 'cn=readonly,dc=example,dc=com',
+  },
+  {
+    key: 'bind_password',
+    label: msg('Bind Password'),
+    placeholder: '••••••••',
+    sensitive: true,
+  },
+  {
+    key: 'user_filter',
+    label: msg('User Filter'),
+    placeholder: '(uid={{.Username}})',
+  },
+  { key: 'user_attr', label: msg('User Attribute'), placeholder: 'uid' },
+  { key: 'display_attr', label: msg('Display Attribute'), placeholder: 'cn' },
 ] as const
 
 export function AuthConfigSection() {
+  const t = useT()
   const queryClient = useQueryClient()
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
+  const { setError, setSuccess } = useFlash()
 
   const { data, isLoading } = useQuery({
     queryKey: ['auth-configs'],
@@ -38,25 +54,16 @@ export function AuthConfigSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Shield className="h-5 w-5" />
-        <h2 className="text-xl font-semibold">Authentication Providers</h2>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t('Authentication')}
+        </h1>
+        <p className="text-sm text-base-content/60 mt-1">
+          {t(
+            'Local accounts are always available. Configure LDAP to let people sign in with their directory account.',
+          )}
+        </p>
       </div>
-
-      {error && (
-        <div className="alert alert-error">
-          <AlertCircle className="h-4 w-4" />
-          <span>{error}</span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setError(null)}>✕</button>
-        </div>
-      )}
-      {success && (
-        <div className="alert alert-success">
-          <CheckCircle className="h-4 w-4" />
-          <span>{success}</span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setSuccess(null)}>✕</button>
-        </div>
-      )}
 
       {isLoading ? (
         <div className="flex justify-center py-8">
@@ -71,16 +78,16 @@ export function AuthConfigSection() {
             fields={LDAP_FIELDS}
             existing={ldapConfig}
             extraBoolFields={[
-              { key: 'start_tls', label: 'StartTLS' },
-              { key: 'skip_verify', label: 'Skip TLS Verify' },
+              { key: 'start_tls', label: msg('StartTLS') },
+              { key: 'skip_verify', label: msg('Skip TLS Verify') },
             ]}
-            onSuccess={(msg) => {
-              setSuccess(msg)
+            onSuccess={(message) => {
+              setSuccess(message)
               setError(null)
               queryClient.invalidateQueries({ queryKey: ['auth-configs'] })
             }}
-            onError={(msg) => {
-              setError(msg)
+            onError={(message) => {
+              setError(message)
               setSuccess(null)
             }}
           />
@@ -103,19 +110,31 @@ function ProviderCard({
   type: string
   title: string
   icon: React.ReactNode
-  fields: readonly { key: string; label: string; placeholder?: string; required?: boolean; sensitive?: boolean }[]
+  fields: readonly {
+    key: string
+    label: string
+    placeholder?: string
+    required?: boolean
+    sensitive?: boolean
+  }[]
   existing?: AuthConfigItem
   extraBoolFields?: { key: string; label: string }[]
   onSuccess: (msg: string) => void
   onError: (msg: string) => void
 }) {
+  const t = useT()
   const existingConfig = existing?.config ?? {}
   const [enabled, setEnabled] = useState(existing?.enabled ?? false)
   const [formData, setFormData] = useState<Record<string, string>>(() => {
     const data: Record<string, string> = {}
     for (const f of fields) {
       const val = existingConfig[f.key]
-      data[f.key] = typeof val === 'string' ? (f.sensitive && val === '••••••••' ? '' : val) : ''
+      data[f.key] =
+        typeof val === 'string'
+          ? f.sensitive && val === '••••••••'
+            ? ''
+            : val
+          : ''
     }
     return data
   })
@@ -147,11 +166,15 @@ function ProviderCard({
         }
       }
       if (typeof config.admin_groups === 'string') {
-        config.admin_groups = config.admin_groups.split(',').map((s: string) => s.trim()).filter(Boolean)
+        config.admin_groups = config.admin_groups
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       }
       return authConfigApi.save(type, enabled, config)
     },
-    onSuccess: () => onSuccess(`${title} configuration saved`),
+    onSuccess: () =>
+      onSuccess(t('{name} configuration saved', { name: title })),
     onError: (err: APIError) => onError(err.message),
   })
 
@@ -162,13 +185,15 @@ function ProviderCard({
       const reset: Record<string, string> = {}
       for (const f of fields) reset[f.key] = ''
       setFormData(reset)
-      onSuccess(`${title} configuration removed`)
+      onSuccess(t('{name} configuration removed', { name: title }))
     },
     onError: (err: APIError) => onError(err.message),
   })
 
   return (
-    <div className={`card border ${enabled ? 'bg-base-200 border-primary/30' : 'bg-base-200'}`}>
+    <div
+      className={`card border ${enabled ? 'bg-base-200 border-primary/30' : 'bg-base-200'}`}
+    >
       <div className="card-body">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold flex items-center gap-2">
@@ -180,9 +205,13 @@ function ProviderCard({
             className={`btn btn-ghost btn-xs gap-1 ${enabled ? 'text-success' : 'text-base-content/40'}`}
           >
             {enabled ? (
-              <><ToggleRight className="h-4 w-4" /> Enabled</>
+              <>
+                <ToggleRight className="h-4 w-4" /> {t('Enabled')}
+              </>
             ) : (
-              <><ToggleLeft className="h-4 w-4" /> Disabled</>
+              <>
+                <ToggleLeft className="h-4 w-4" /> {t('Disabled')}
+              </>
             )}
           </button>
         </div>
@@ -197,7 +226,7 @@ function ProviderCard({
           {fields.map((f) => (
             <fieldset key={f.key} className="fieldset">
               <legend className="fieldset-legend text-xs">
-                {f.label}
+                {t(f.label)}
                 {f.required && <span className="text-error"> *</span>}
               </legend>
               <input
@@ -205,20 +234,27 @@ function ProviderCard({
                 placeholder={f.placeholder}
                 className="input input-bordered input-sm w-full"
                 value={formData[f.key] ?? ''}
-                onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, [f.key]: e.target.value })
+                }
               />
             </fieldset>
           ))}
 
           {extraBoolFields?.map((f) => (
-            <label key={f.key} className="flex items-center gap-2 cursor-pointer py-1">
+            <label
+              key={f.key}
+              className="flex items-center gap-2 cursor-pointer py-1"
+            >
               <input
                 type="checkbox"
                 className="checkbox checkbox-sm"
                 checked={boolData[f.key] ?? false}
-                onChange={(e) => setBoolData({ ...boolData, [f.key]: e.target.checked })}
+                onChange={(e) =>
+                  setBoolData({ ...boolData, [f.key]: e.target.checked })
+                }
               />
-              <span className="text-sm">{f.label}</span>
+              <span className="text-sm">{t(f.label)}</span>
             </label>
           ))}
 
@@ -229,7 +265,7 @@ function ProviderCard({
               disabled={saveMutation.isPending}
             >
               <Save className="h-3.5 w-3.5" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
+              {saveMutation.isPending ? t('Saving…') : t('Save')}
             </button>
             {existing && (
               <button

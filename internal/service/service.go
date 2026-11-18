@@ -22,6 +22,8 @@ type Defaults struct {
 	GroupRepo      string
 	ProxyRepo      string
 	ProxyUpstreams []string
+	// SessionTTL is the lifetime of login session tokens (0 = DefaultSessionTTL).
+	SessionTTL time.Duration
 }
 
 type PublishPayload struct {

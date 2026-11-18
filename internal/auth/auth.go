@@ -3,13 +3,16 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"hermit/internal/store"
+
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -38,15 +41,36 @@ func ActorFromClaims(c Claims) Actor {
 
 const claimsContextKey = "auth_claims"
 
-type Authenticator struct {
-	db         *pgxpool.Pool
-	adminToken string
+// StaticAdminSubject is the identity of requests made with ADMIN_TOKEN.
+const StaticAdminSubject = "admin"
+
+// TokenStore is the persistence needed to authenticate tokens.
+type TokenStore interface {
+	LookupTokenForAuth(ctx context.Context, tokenHash string) (store.TokenAuthRecord, error)
+	TouchTokenLastUsed(ctx context.Context, id uuid.UUID)
 }
 
-func NewAuthenticator(db *pgxpool.Pool, adminToken string) *Authenticator {
+var (
+	errTokenDisabled = errors.New("token disabled")
+	errTokenExpired  = errors.New("token expired")
+	errUserMissing   = errors.New("token subject no longer exists")
+	errUserDisabled  = errors.New("user disabled")
+	errSessionStale  = errors.New("session issued before password change")
+)
+
+type Authenticator struct {
+	store      TokenStore
+	adminToken string
+	now        func() time.Time
+}
+
+// NewAuthenticator builds an Authenticator. An empty adminToken disables the
+// static super-admin token.
+func NewAuthenticator(st TokenStore, adminToken string) *Authenticator {
 	return &Authenticator{
-		db:         db,
+		store:      st,
 		adminToken: adminToken,
+		now:        time.Now,
 	}
 }
 
@@ -69,8 +93,7 @@ func (a *Authenticator) Middleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 // OptionalMiddleware sets claims if a valid token is present but does not
-// reject anonymous requests. Use on public endpoints that benefit from
-// knowing the caller's identity (e.g. repo-level filtering).
+// reject anonymous requests. Anonymous callers get no repository access.
 func (a *Authenticator) OptionalMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		token := extractToken(c.Request())
@@ -85,39 +108,46 @@ func (a *Authenticator) OptionalMiddleware(next echo.HandlerFunc) echo.HandlerFu
 }
 
 func (a *Authenticator) Authenticate(ctx context.Context, token string) (Claims, error) {
-	if token == a.adminToken {
-		return Claims{Subject: "admin", IsAdmin: true}, nil
+	if a.adminToken != "" &&
+		subtle.ConstantTimeCompare([]byte(token), []byte(a.adminToken)) == 1 {
+		return Claims{Subject: StaticAdminSubject, IsAdmin: true}, nil
 	}
 
 	hash := sha256.Sum256([]byte(token))
-	tokenHash := hex.EncodeToString(hash[:])
-
-	var tokenID string
-	var subject string
-	var isAdmin bool
-	var disabled bool
-	err := a.db.QueryRow(ctx, `
-		SELECT id, subject, is_admin, disabled
-		FROM api_tokens
-		WHERE token_hash = $1
-	`, tokenHash).Scan(&tokenID, &subject, &isAdmin, &disabled)
+	rec, err := a.store.LookupTokenForAuth(ctx, hex.EncodeToString(hash[:]))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Claims{}, err
-		}
 		return Claims{}, err
 	}
-	if disabled {
-		return Claims{}, errors.New("token disabled")
+
+	claims, err := evaluateToken(rec, a.now())
+	if err != nil {
+		return Claims{}, err
 	}
 
-	// Async update last_used_at
-	go func() {
-		_, _ = a.db.Exec(context.Background(),
-			`UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, tokenID)
-	}()
+	go a.store.TouchTokenLastUsed(context.Background(), rec.TokenID)
+	return claims, nil
+}
 
-	return Claims{Subject: subject, IsAdmin: isAdmin}, nil
+// evaluateToken applies token and live user state. Admin rights always come
+// from the users row, never from the value stored on the token.
+func evaluateToken(rec store.TokenAuthRecord, now time.Time) (Claims, error) {
+	if rec.Disabled {
+		return Claims{}, errTokenDisabled
+	}
+	if rec.ExpiresAt != nil && !now.Before(*rec.ExpiresAt) {
+		return Claims{}, errTokenExpired
+	}
+	if !rec.UserFound {
+		return Claims{}, errUserMissing
+	}
+	if rec.UserDisabled {
+		return Claims{}, errUserDisabled
+	}
+	if rec.TokenType == store.TokenTypeSession && rec.PasswordChangedAt != nil &&
+		rec.CreatedAt.Before(*rec.PasswordChangedAt) {
+		return Claims{}, errSessionStale
+	}
+	return Claims{Subject: rec.Subject, IsAdmin: rec.UserIsAdmin}, nil
 }
 
 func GetClaims(c echo.Context) (Claims, bool) {

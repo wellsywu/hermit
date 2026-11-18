@@ -49,7 +49,7 @@ func (h *Handler) AddSyncSource(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
-	source, err := h.svc.AddSyncSource(c.Request().Context(), req.Name, req.UpstreamURL)
+	source, err := h.svc.AddSyncSource(c.Request().Context(), req.Name, req.UpstreamURL, actorSubject(c))
 	if err != nil {
 		return mapServiceError(err)
 	}
@@ -201,7 +201,7 @@ func (h *Handler) AssignMember(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
-	if err := h.svc.AssignRepoRole(c.Request().Context(), repoID, req.Subject, req.Role); err != nil {
+	if err := h.svc.AssignRepoRole(c.Request().Context(), repoID, req.Subject, req.Role, actorSubject(c)); err != nil {
 		return mapServiceError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -361,6 +361,12 @@ func (h *Handler) DeleteAuthConfig(c echo.Context) error {
 		return mapServiceError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+// actorSubject returns the authenticated subject (empty if none).
+func actorSubject(c echo.Context) string {
+	claims, _ := auth.GetClaims(c)
+	return claims.Subject
 }
 
 func (h *Handler) requireAdmin(c echo.Context) error {

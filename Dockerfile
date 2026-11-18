@@ -2,13 +2,16 @@
 FROM node:22-alpine AS web-builder
 RUN corepack enable
 WORKDIR /web
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ .
 RUN pnpm build
 
 # ── Stage 2: Build backend ──
 FROM golang:1.24-alpine AS go-builder
+# Override for restricted networks, e.g. --build-arg GOPROXY=https://goproxy.cn,direct
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 RUN apk add --no-cache git
 WORKDIR /src
 COPY go.mod go.sum ./

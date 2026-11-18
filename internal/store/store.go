@@ -153,13 +153,15 @@ func (s *Store) EnsureRepository(ctx context.Context, name string, repoType stri
 	return s.CreateRepository(ctx, name, repoType, upstreamURL)
 }
 
-func (s *Store) UpsertRepoMember(ctx context.Context, repoID uuid.UUID, subject string, role string) error {
+// UpsertRepoMember grants (or changes) a role. grantedBy records who did it.
+func (s *Store) UpsertRepoMember(ctx context.Context, repoID uuid.UUID, subject string, role string, grantedBy string) error {
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO repo_members (repo_id, subject, role)
-		VALUES ($1, $2, $3::repo_role)
+		INSERT INTO repo_members (repo_id, subject, role, granted_by)
+		VALUES ($1, $2, $3::repo_role, $4)
 		ON CONFLICT (repo_id, subject)
-		DO UPDATE SET role = EXCLUDED.role
-	`, repoID, subject, role)
+		DO UPDATE SET role = EXCLUDED.role, granted_by = EXCLUDED.granted_by, updated_at = now()
+		WHERE repo_members.role IS DISTINCT FROM EXCLUDED.role
+	`, repoID, subject, role, grantedBy)
 	return err
 }
 
@@ -223,8 +225,12 @@ func (s *Store) ListGroupMembers(ctx context.Context, groupRepoID uuid.UUID) ([]
 //
 // If allAccess is true, all members are returned (admin shortcut).
 func (s *Store) ListAccessibleGroupMembers(ctx context.Context, groupRepoID uuid.UUID, subject string, allAccess bool) ([]Repository, error) {
-	if allAccess || subject == "" {
+	if allAccess {
 		return s.ListGroupMembers(ctx, groupRepoID)
+	}
+	if subject == "" {
+		// No identity: nothing is accessible ('*' means "any signed-in user").
+		return nil, nil
 	}
 
 	rows, err := s.db.Query(ctx, `
@@ -260,12 +266,14 @@ type RepoMember struct {
 	RepoName  string
 	Subject   string
 	Role      string
+	GrantedBy string
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (s *Store) ListRepoMembers(ctx context.Context, repoID uuid.UUID) ([]RepoMember, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT rm.repo_id, r.name, rm.subject, rm.role::text, rm.created_at
+		SELECT rm.repo_id, r.name, rm.subject, rm.role::text, rm.granted_by, rm.created_at, rm.updated_at
 		FROM repo_members rm
 		JOIN repositories r ON r.id = rm.repo_id
 		WHERE rm.repo_id = $1
@@ -279,7 +287,7 @@ func (s *Store) ListRepoMembers(ctx context.Context, repoID uuid.UUID) ([]RepoMe
 	var members []RepoMember
 	for rows.Next() {
 		var m RepoMember
-		if err := rows.Scan(&m.RepoID, &m.RepoName, &m.Subject, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.RepoID, &m.RepoName, &m.Subject, &m.Role, &m.GrantedBy, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -289,7 +297,7 @@ func (s *Store) ListRepoMembers(ctx context.Context, repoID uuid.UUID) ([]RepoMe
 
 func (s *Store) ListAllRepoMembers(ctx context.Context) ([]RepoMember, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT rm.repo_id, r.name, rm.subject, rm.role::text, rm.created_at
+		SELECT rm.repo_id, r.name, rm.subject, rm.role::text, rm.granted_by, rm.created_at, rm.updated_at
 		FROM repo_members rm
 		JOIN repositories r ON r.id = rm.repo_id
 		ORDER BY r.name, rm.subject
@@ -302,7 +310,7 @@ func (s *Store) ListAllRepoMembers(ctx context.Context) ([]RepoMember, error) {
 	var members []RepoMember
 	for rows.Next() {
 		var m RepoMember
-		if err := rows.Scan(&m.RepoID, &m.RepoName, &m.Subject, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.RepoID, &m.RepoName, &m.Subject, &m.Role, &m.GrantedBy, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -947,127 +955,28 @@ func (s *Store) IncrementSkillDownloads(ctx context.Context, repoID uuid.UUID, s
 	return nil
 }
 
-func (s *Store) SetSkillDeleted(ctx context.Context, repoID uuid.UUID, slug string, deleted bool) error {
-	var deletedAt any
+// GetSkillCreator returns created_by for a skill, including soft-deleted ones.
+func (s *Store) GetSkillCreator(ctx context.Context, repoID uuid.UUID, slug string) (string, error) {
+	var createdBy string
+	err := s.db.QueryRow(ctx, `
+		SELECT created_by FROM packages WHERE repo_id = $1 AND name = $2
+	`, repoID, slug).Scan(&createdBy)
+	return createdBy, err
+}
+
+// SetSkillDeleted soft-deletes (or restores) a skill and records who deleted it.
+func (s *Store) SetSkillDeleted(ctx context.Context, repoID uuid.UUID, slug string, deleted bool, actor string) error {
+	var deletedAt, deletedBy any
 	if deleted {
 		deletedAt = time.Now().UTC()
+		deletedBy = actor
 	}
 	ct, err := s.db.Exec(ctx, `
 		UPDATE packages
-		SET deleted_at = $3, updated_at = now()
+		SET deleted_at = $3, deleted_by = $4, updated_at = now()
 		WHERE repo_id = $1
 		  AND name = $2
-	`, repoID, slug, deletedAt)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-// APIToken represents a row in the api_tokens table.
-type APIToken struct {
-	ID         uuid.UUID  `json:"id"`
-	Subject    string     `json:"subject"`
-	Name       string     `json:"name"`
-	TokenType  string     `json:"token_type"`
-	IsAdmin    bool       `json:"is_admin"`
-	Disabled   bool       `json:"disabled"`
-	CreatedAt  time.Time  `json:"created_at"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-}
-
-const (
-	TokenTypeSession  = "session"
-	TokenTypePersonal = "personal"
-)
-
-// CreatePersonalToken inserts a new personal access token.
-func (s *Store) CreatePersonalToken(ctx context.Context, subject, name, tokenHash string, isAdmin bool) (uuid.UUID, error) {
-	var id uuid.UUID
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO api_tokens (token_hash, subject, name, token_type, is_admin)
-		VALUES ($1, $2, $3, 'personal', $4)
-		RETURNING id
-	`, tokenHash, subject, name, isAdmin).Scan(&id)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return uuid.Nil, ErrConflict
-		}
-		return uuid.Nil, err
-	}
-	return id, nil
-}
-
-// UpsertSessionToken creates or replaces the session token for a subject.
-// Each subject has at most one active session token.
-func (s *Store) UpsertSessionToken(ctx context.Context, subject, tokenHash string, isAdmin bool) error {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM api_tokens WHERE subject = $1 AND token_type = 'session'
-	`, subject)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.Exec(ctx, `
-		INSERT INTO api_tokens (token_hash, subject, name, token_type, is_admin)
-		VALUES ($1, $2, '', 'session', $3)
-	`, tokenHash, subject, isAdmin)
-	return err
-}
-
-// AuthenticateToken looks up a token by hash and returns its metadata.
-func (s *Store) AuthenticateToken(ctx context.Context, tokenHash string) (APIToken, error) {
-	var t APIToken
-	err := s.db.QueryRow(ctx, `
-		SELECT id, subject, name, token_type, is_admin, disabled, created_at, last_used_at
-		FROM api_tokens
-		WHERE token_hash = $1
-	`, tokenHash).Scan(&t.ID, &t.Subject, &t.Name, &t.TokenType, &t.IsAdmin, &t.Disabled, &t.CreatedAt, &t.LastUsedAt)
-	if err != nil {
-		return APIToken{}, err
-	}
-	return t, nil
-}
-
-// TouchTokenLastUsed updates the last_used_at timestamp.
-func (s *Store) TouchTokenLastUsed(ctx context.Context, id uuid.UUID) {
-	_, _ = s.db.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, id)
-}
-
-// ListTokensBySubject returns all personal tokens for a given subject.
-func (s *Store) ListTokensBySubject(ctx context.Context, subject string) ([]APIToken, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, subject, name, token_type, is_admin, disabled, created_at, last_used_at
-		FROM api_tokens
-		WHERE subject = $1 AND token_type = 'personal'
-		ORDER BY created_at DESC
-	`, subject)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var tokens []APIToken
-	for rows.Next() {
-		var t APIToken
-		if err := rows.Scan(&t.ID, &t.Subject, &t.Name, &t.TokenType, &t.IsAdmin, &t.Disabled, &t.CreatedAt, &t.LastUsedAt); err != nil {
-			return nil, err
-		}
-		tokens = append(tokens, t)
-	}
-	return tokens, rows.Err()
-}
-
-// RevokeToken deletes a token by id, scoped to a subject (unless allAccess).
-func (s *Store) RevokeToken(ctx context.Context, tokenID uuid.UUID, subject string, allAccess bool) error {
-	var ct pgconn.CommandTag
-	var err error
-	if allAccess {
-		ct, err = s.db.Exec(ctx, `DELETE FROM api_tokens WHERE id = $1`, tokenID)
-	} else {
-		ct, err = s.db.Exec(ctx, `DELETE FROM api_tokens WHERE id = $1 AND subject = $2`, tokenID, subject)
-	}
+	`, repoID, slug, deletedAt, deletedBy)
 	if err != nil {
 		return err
 	}
@@ -1129,11 +1038,11 @@ func (s *Store) ListRepositories(ctx context.Context) ([]Repository, error) {
 }
 
 type DashboardStats struct {
-	TotalSkills   int64
-	TotalVersions int64
+	TotalSkills    int64
+	TotalVersions  int64
 	TotalDownloads int64
-	TotalStars    int64
-	TotalInstalls int64
+	TotalStars     int64
+	TotalInstalls  int64
 }
 
 func (s *Store) GetDashboardStats(ctx context.Context, repoIDs []uuid.UUID) (DashboardStats, error) {
@@ -1242,122 +1151,6 @@ func ValidateRole(role string) error {
 	default:
 		return fmt.Errorf("invalid role: %s", role)
 	}
-}
-
-// ---- Local Users ----
-
-type User struct {
-	ID           uuid.UUID `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	DisplayName  string    `json:"display_name"`
-	Email        string    `json:"email"`
-	IsAdmin      bool      `json:"is_admin"`
-	Disabled     bool      `json:"disabled"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-func (s *Store) CreateUser(ctx context.Context, username, passwordHash, displayName, email string, isAdmin bool) (User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO users (username, password_hash, display_name, email, is_admin)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, username, password_hash, display_name, email, is_admin, disabled, created_at
-	`, username, passwordHash, displayName, email, isAdmin).Scan(
-		&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.IsAdmin, &u.Disabled, &u.CreatedAt,
-	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return User{}, ErrConflict
-		}
-		return User{}, err
-	}
-	return u, nil
-}
-
-func (s *Store) GetUserByUsername(ctx context.Context, username string) (User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		SELECT id, username, password_hash, display_name, email, is_admin, disabled, created_at
-		FROM users WHERE username = $1
-	`, username).Scan(
-		&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.IsAdmin, &u.Disabled, &u.CreatedAt,
-	)
-	if err != nil {
-		return User{}, err
-	}
-	return u, nil
-}
-
-func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, username, password_hash, display_name, email, is_admin, disabled, created_at
-		FROM users ORDER BY created_at
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var users []User
-	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.IsAdmin, &u.Disabled, &u.CreatedAt); err != nil {
-			return nil, err
-		}
-		users = append(users, u)
-	}
-	return users, rows.Err()
-}
-
-func (s *Store) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		SELECT id, username, password_hash, display_name, email, is_admin, disabled, created_at
-		FROM users WHERE id = $1
-	`, id).Scan(
-		&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.IsAdmin, &u.Disabled, &u.CreatedAt,
-	)
-	if err != nil {
-		return User{}, err
-	}
-	return u, nil
-}
-
-func (s *Store) UpdateUser(ctx context.Context, id uuid.UUID, displayName, email string, isAdmin, disabled bool) (User, error) {
-	var u User
-	err := s.db.QueryRow(ctx, `
-		UPDATE users SET display_name = $2, email = $3, is_admin = $4, disabled = $5
-		WHERE id = $1
-		RETURNING id, username, password_hash, display_name, email, is_admin, disabled, created_at
-	`, id, displayName, email, isAdmin, disabled).Scan(
-		&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.IsAdmin, &u.Disabled, &u.CreatedAt,
-	)
-	if err != nil {
-		return User{}, err
-	}
-	return u, nil
-}
-
-func (s *Store) UpdateUserPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
-	ct, err := s.db.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, id, passwordHash)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (s *Store) DeleteUser(ctx context.Context, id uuid.UUID) error {
-	ct, err := s.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
 }
 
 // ---- Auth Config (LDAP) ----

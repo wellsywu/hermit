@@ -11,7 +11,6 @@ services:
       - "5432:5432"
     volumes:
       - hermit_pgdata:/var/lib/postgresql/data
-      - ./docker/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hermit"]
       interval: 5s
@@ -35,10 +34,12 @@ services:
       STORAGE_BACKEND: local
       STORAGE_ROOT: /data
       WEB_DIR: /app/web
-      ADMIN_TOKEN: dev-admin-token
+      # Optional static super-admin token (>= 32 chars). Empty disables it.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: changeme123
       BOOTSTRAP_DEFAULT_REPOS: "true"
+      SESSION_TTL: ${SESSION_TTL:-168h}
 
 volumes:
   hermit_pgdata:

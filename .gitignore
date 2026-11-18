@@ -39,3 +39,10 @@ web/app.config.timestamp_*.js
 web/.env
 web/.env.local
 web/.env.*.local
+
+# Deploy settings (may contain hosts / key paths)
+scripts/deploy/deploy.env
+scripts/deploy/deploy.json
+scripts/
+
+docs/

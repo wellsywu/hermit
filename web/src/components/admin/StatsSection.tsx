@@ -9,8 +9,10 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import { api } from '#/api'
+import { msg, useT } from '#/i18n'
 
 export function StatsSection() {
+  const t = useT()
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin-stats'],
     queryFn: () => api.getDashboardStats(),
@@ -20,10 +22,9 @@ export function StatsSection() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Overview</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="card bg-base-200 border">
+            <div key={i} className="card bg-base-100 border">
               <div className="card-body py-4">
                 <div className="skeleton h-4 w-16" />
                 <div className="skeleton h-8 w-20" />
@@ -39,31 +40,31 @@ export function StatsSection() {
 
   const statCards = [
     {
-      label: 'Skills',
+      label: msg('Skills'),
       value: stats.totalSkills,
       icon: <Package className="h-5 w-5" />,
       color: 'text-primary',
     },
     {
-      label: 'Versions',
+      label: msg('Versions'),
       value: stats.totalVersions,
       icon: <Layers className="h-5 w-5" />,
       color: 'text-secondary',
     },
     {
-      label: 'Downloads',
+      label: msg('Downloads'),
       value: stats.totalDownloads,
       icon: <Download className="h-5 w-5" />,
       color: 'text-accent',
     },
     {
-      label: 'Stars',
+      label: msg('Stars'),
       value: stats.totalStars,
       icon: <Star className="h-5 w-5" />,
       color: 'text-warning',
     },
     {
-      label: 'Installs',
+      label: msg('Installs'),
       value: stats.totalInstalls,
       icon: <Activity className="h-5 w-5" />,
       color: 'text-success',
@@ -72,16 +73,14 @@ export function StatsSection() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Overview</h2>
-
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {statCards.map((card) => (
-          <div key={card.label} className="card bg-base-200 border">
+          <div key={card.label} className="card bg-base-100 border">
             <div className="card-body py-4 gap-1">
               <div className={`flex items-center gap-2 ${card.color}`}>
                 {card.icon}
                 <span className="text-sm font-medium text-base-content/60">
-                  {card.label}
+                  {t(card.label)}
                 </span>
               </div>
               <p className="text-2xl font-bold tabular-nums">
@@ -93,21 +92,21 @@ export function StatsSection() {
       </div>
 
       {stats.repositories.length > 0 && (
-        <div className="card bg-base-200 border">
+        <div className="card bg-base-100 border">
           <div className="card-body">
             <h3 className="font-semibold flex items-center gap-2">
               <Database className="h-4 w-4" />
-              Repositories
+              {t('Repositories')}
             </h3>
             <div className="overflow-x-auto">
               <table className="table table-sm">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Upstream</th>
-                    <th>Skills</th>
-                    <th>Status</th>
+                    <th>{t('Name')}</th>
+                    <th>{t('Type')}</th>
+                    <th>{t('Upstream')}</th>
+                    <th>{t('Skills')}</th>
+                    <th>{t('Status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -136,11 +135,11 @@ export function StatsSection() {
                       <td>
                         {repo.enabled ? (
                           <span className="badge badge-success badge-sm gap-1">
-                            <CheckCircle className="h-3 w-3" /> Active
+                            <CheckCircle className="h-3 w-3" /> {t('Active')}
                           </span>
                         ) : (
                           <span className="badge badge-error badge-sm gap-1">
-                            Disabled
+                            {t('Disabled')}
                           </span>
                         )}
                       </td>

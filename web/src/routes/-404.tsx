@@ -1,13 +1,18 @@
 import { Link } from '@tanstack/react-router'
+import { EmptyState } from '#/components/ui/EmptyState'
+import { useT } from '#/i18n'
 
 export function NotFoundComponent() {
+  const t = useT()
   return (
-    <div className="text-center py-16 space-y-4">
-      <h1 className="text-4xl font-bold">404</h1>
-      <p className="text-lg text-base-content/60">Page not found</p>
-      <Link to="/" className="btn btn-primary">
-        Back to home
-      </Link>
-    </div>
+    <EmptyState
+      title={t('Page not found')}
+      description={t('This page does not exist, or it has moved.')}
+      action={
+        <Link to="/" className="btn btn-primary btn-sm">
+          {t('Back to skills')}
+        </Link>
+      }
+    />
   )
 }

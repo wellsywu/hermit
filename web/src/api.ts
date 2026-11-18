@@ -1,3 +1,5 @@
+import { getLang } from '#/i18n'
+
 const API_BASE = '/api/v1'
 const INTERNAL_BASE = '/api/internal'
 
@@ -36,7 +38,9 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-function notifyUnauthorized(options?: { suppressUnauthorizedHandler?: boolean }): void {
+function notifyUnauthorized(options?: {
+  suppressUnauthorizedHandler?: boolean
+}): void {
   if (options?.suppressUnauthorizedHandler) return
   clearToken()
   for (const handler of unauthorizedHandlers) handler()
@@ -61,7 +65,10 @@ async function readErrorMessage(res: Response): Promise<string> {
   return msg
 }
 
-async function throwAPIError(res: Response, options?: { suppressUnauthorizedHandler?: boolean }): Promise<never> {
+async function throwAPIError(
+  res: Response,
+  options?: { suppressUnauthorizedHandler?: boolean },
+): Promise<never> {
   if (res.status === 401) {
     notifyUnauthorized(options)
   }
@@ -153,6 +160,7 @@ export interface AdminToken {
   token: string
   id: string
   name: string
+  expiresAt: string | null
 }
 
 export interface PersonalAccessToken {
@@ -164,16 +172,49 @@ export interface PersonalAccessToken {
   disabled: boolean
   created_at: string
   last_used_at: string | null
+  /** null = never expires */
+  expires_at: string | null
 }
 
 export interface CreateTokenResult {
   token: string
   id: string
   name: string
+  expires_at: string | null
 }
 
-export interface SearchResult extends SkillSummary {
+/** Accepted personal token lifetimes in days; 0 = never expires. */
+export const TOKEN_EXPIRY_DAYS = [7, 30, 90, 0] as const
+export const DEFAULT_TOKEN_EXPIRY_DAYS = 90
+
+/** LDAP identities are namespaced as "ldap:<username>". */
+export const LDAP_SUBJECT_PREFIX = 'ldap:'
+
+export function isLdapSubject(subject: string): boolean {
+  return subject.startsWith(LDAP_SUBJECT_PREFIX)
+}
+
+/** Display name for a subject without the "ldap:" namespace. */
+export function subjectLabel(subject: string): string {
+  return isLdapSubject(subject)
+    ? subject.slice(LDAP_SUBJECT_PREFIX.length)
+    : subject
+}
+
+/** The search endpoint returns a slimmer shape than the skill list. */
+export interface SearchResult {
+  slug: string
+  displayName: string
+  summary: string | null
+  version: string | null
   score: number
+  updatedAt: number | null
+}
+
+export interface PublishFile {
+  /** Path inside the skill, e.g. `scripts/run.py`. */
+  path: string
+  file: File
 }
 
 export interface RepoStatsView {
@@ -227,6 +268,9 @@ export interface RepoMember {
   repoName: string
   subject: string
   role: 'admin' | 'developer' | 'viewer'
+  grantedBy: string
+  createdAt: string
+  updatedAt: string
 }
 
 // API functions
@@ -275,10 +319,17 @@ export const api = {
   whoami: () => request<{ user: User }>(`${API_BASE}/whoami`),
 
   changePassword: (oldPassword: string, newPassword: string) =>
-    request<{ ok: boolean }>(`${API_BASE}/account/change-password`, {
-      method: 'POST',
-      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
-    }),
+    // The server invalidates earlier sessions and returns a fresh token.
+    request<{ ok: boolean; token: string }>(
+      `${API_BASE}/account/change-password`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          old_password: oldPassword,
+          new_password: newPassword,
+        }),
+      },
+    ),
 
   publishSkill: async (
     payload: {
@@ -289,13 +340,13 @@ export const api = {
       summary?: string
       tags?: string[]
     },
-    files: File[],
+    files: PublishFile[],
   ) => {
     const token = getToken()
     const formData = new FormData()
     formData.append('payload', JSON.stringify(payload))
-    for (const file of files) {
-      formData.append('files', file)
+    for (const { path, file } of files) {
+      formData.append('files', file, path)
     }
 
     const res = await fetch(`${API_BASE}/skills`, {
@@ -326,20 +377,27 @@ export const api = {
     }),
 
   // Admin: create token for any user
-  adminCreateToken: (subject: string, name: string) =>
+  adminCreateToken: (
+    subject: string,
+    name: string,
+    expiresInDays: number = DEFAULT_TOKEN_EXPIRY_DAYS,
+  ) =>
     request<AdminToken>(`${INTERNAL_BASE}/tokens`, {
       method: 'POST',
-      body: JSON.stringify({ subject, name }),
+      body: JSON.stringify({ subject, name, expires_in_days: expiresInDays }),
     }),
 
   // User self-service: Personal Access Tokens
   listMyTokens: () =>
     request<{ tokens: PersonalAccessToken[] }>(`${API_BASE}/tokens`),
 
-  createMyToken: (name: string) =>
+  createMyToken: (
+    name: string,
+    expiresInDays: number = DEFAULT_TOKEN_EXPIRY_DAYS,
+  ) =>
     request<CreateTokenResult>(`${API_BASE}/tokens`, {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, expires_in_days: expiresInDays }),
     }),
 
   revokeMyToken: (tokenId: string) =>
@@ -396,13 +454,10 @@ export const api = {
     ),
 
   assignMember: (repoId: string, subject: string, role: string) =>
-    request<{ ok: boolean }>(
-      `${INTERNAL_BASE}/rbac/repos/${repoId}/members`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ subject, role }),
-      },
-    ),
+    request<{ ok: boolean }>(`${INTERNAL_BASE}/rbac/repos/${repoId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ subject, role }),
+    }),
 
   removeMember: (repoId: string, subject: string) =>
     request<{ ok: boolean }>(
@@ -418,6 +473,28 @@ export const api = {
     if (opts?.version) q.set('version', opts.version)
     if (opts?.tag) q.set('tag', opts.tag)
     return `${API_BASE}/download?${q}`
+  },
+
+  /**
+   * Fetch the zip with the bearer token and hand it to the browser. A plain
+   * `<a href>` cannot be used because the API only accepts header auth.
+   */
+  downloadSkill: async (slug: string, version?: string): Promise<void> => {
+    const res = await fetch(api.downloadUrl(slug, { version }), {
+      headers: authHeaders(),
+    })
+    if (!res.ok) {
+      return throwAPIError(res)
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = version ? `${slug}-${version}.zip` : `${slug}.zip`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   },
 
   fileUrl: (slug: string, path: string, version?: string): string => {
@@ -501,7 +578,6 @@ export const authApi = {
       body: JSON.stringify({ username, password }),
       suppressUnauthorizedHandler: true,
     }),
-
 }
 
 // Admin user management
@@ -512,12 +588,15 @@ export interface LocalUser {
   email: string
   is_admin: boolean
   disabled: boolean
+  source: 'local' | 'ldap'
   created_at: string
+  updated_at: string
+  last_login_at: string | null
+  password_changed_at: string | null
 }
 
 export const userApi = {
-  list: () =>
-    request<{ users: LocalUser[] }>(`${INTERNAL_BASE}/users`),
+  list: () => request<{ users: LocalUser[] }>(`${INTERNAL_BASE}/users`),
 
   create: (data: {
     username: string
@@ -548,14 +627,11 @@ export const userApi = {
     }),
 
   resetPassword: (id: string, password: string) =>
-    request<{ ok: boolean }>(
-      `${INTERNAL_BASE}/users/${id}/reset-password`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      },
-    ),
+    request<{ ok: boolean }>(`${INTERNAL_BASE}/users/${id}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    }),
 
   remove: (id: string) =>
     request<{ ok: boolean }>(`${INTERNAL_BASE}/users/${id}`, {
@@ -571,25 +647,26 @@ export function formatBytes(bytes: number): string {
 }
 
 export function timeAgo(ms: number): string {
+  const zh = getLang() === 'zh'
   const seconds = Math.floor((Date.now() - ms) / 1000)
-  if (seconds < 60) return 'just now'
+  if (seconds < 60) return zh ? '刚刚' : 'just now'
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return zh ? `${minutes} 分钟前` : `${minutes}m ago`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return zh ? `${hours} 小时前` : `${hours}h ago`
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
+  if (days < 30) return zh ? `${days} 天前` : `${days}d ago`
   const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo ago`
-  return `${Math.floor(months / 12)}y ago`
+  if (months < 12) return zh ? `${months} 个月前` : `${months}mo ago`
+  const years = Math.floor(months / 12)
+  return zh ? `${years} 年前` : `${years}y ago`
 }
 
 export function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  return new Date(ms).toLocaleDateString(
+    getLang() === 'zh' ? 'zh-CN' : 'en-US',
+    { year: 'numeric', month: 'short', day: 'numeric' },
+  )
 }
 
 export function skillColor(slug: string): string {

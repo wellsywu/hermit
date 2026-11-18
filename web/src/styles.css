@@ -1,94 +1,363 @@
+@import '@fontsource-variable/figtree';
+@import '@fontsource-variable/jetbrains-mono';
 @import 'tailwindcss';
 @plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* `dark:` follows the app theme toggle, not just the OS setting. */
+@custom-variant dark (&:where([data-theme='hermit-dark'], [data-theme='hermit-dark'] *));
 
 @theme inline {
   --default-border-color: var(--color-base-300);
+  --font-sans:
+    'Figtree Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', Menlo, Consolas,
+    monospace;
 }
 
 @plugin "daisyui/theme" {
-  name: "hermit-light";
+  name: 'hermit-light';
   default: true;
-  --color-base-100: oklch(0.97 0.008 70);
-  --color-base-200: oklch(0.93 0.012 65);
-  --color-base-300: oklch(0.88 0.018 60);
+  --color-base-100: oklch(0.99 0.004 75);
+  --color-base-200: oklch(0.965 0.008 70);
+  --color-base-300: oklch(0.905 0.014 65);
   --color-base-content: oklch(0.25 0.03 55);
-  --color-primary: oklch(0.62 0.145 52);
+  --color-primary: oklch(0.6 0.15 48);
   --color-primary-content: oklch(0.99 0 0);
-  --color-secondary: oklch(0.60 0.10 165);
+  --color-secondary: oklch(0.55 0.09 190);
   --color-secondary-content: oklch(0.99 0 0);
   --color-accent: oklch(0.76 0.12 65);
   --color-accent-content: oklch(0.25 0.04 55);
-  --color-neutral: oklch(0.30 0.03 55);
+  --color-neutral: oklch(0.3 0.03 55);
   --color-neutral-content: oklch(0.95 0.008 70);
-  --color-info: oklch(0.72 0.15 232);
+  --color-info: oklch(0.62 0.13 240);
   --color-info-content: oklch(0.99 0 0);
-  --color-success: oklch(0.72 0.17 155);
+  --color-success: oklch(0.6 0.14 155);
   --color-success-content: oklch(0.99 0 0);
-  --color-warning: oklch(0.82 0.16 82);
+  --color-warning: oklch(0.8 0.15 82);
   --color-warning-content: oklch(0.25 0.04 82);
-  --color-error: oklch(0.63 0.22 25);
+  --color-error: oklch(0.58 0.2 25);
   --color-error-content: oklch(0.99 0 0);
   --radius-selector: 0.5rem;
-  --radius-field: 0.375rem;
-  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.875rem;
   --border: 1px;
-  --depth: 1;
+  --depth: 0;
   --noise: 0;
 }
 
 @plugin "daisyui/theme" {
-  name: "hermit-dark";
-  --color-base-100: oklch(0.20 0.02 55);
-  --color-base-200: oklch(0.25 0.02 55);
-  --color-base-300: oklch(0.30 0.025 55);
-  --color-base-content: oklch(0.90 0.012 65);
-  --color-primary: oklch(0.70 0.15 52);
-  --color-primary-content: oklch(0.15 0.02 55);
-  --color-secondary: oklch(0.65 0.10 165);
-  --color-secondary-content: oklch(0.15 0.02 165);
+  name: 'hermit-dark';
+  --color-base-100: oklch(0.215 0.015 55);
+  --color-base-200: oklch(0.18 0.014 55);
+  --color-base-300: oklch(0.31 0.02 55);
+  --color-base-content: oklch(0.92 0.012 65);
+  --color-primary: oklch(0.72 0.15 52);
+  --color-primary-content: oklch(0.17 0.02 55);
+  --color-secondary: oklch(0.7 0.09 190);
+  --color-secondary-content: oklch(0.15 0.02 190);
   --color-accent: oklch(0.76 0.12 65);
-  --color-accent-content: oklch(0.20 0.03 55);
+  --color-accent-content: oklch(0.2 0.03 55);
   --color-neutral: oklch(0.17 0.015 55);
-  --color-neutral-content: oklch(0.90 0.012 65);
-  --color-info: oklch(0.72 0.15 232);
-  --color-info-content: oklch(0.15 0.02 232);
-  --color-success: oklch(0.72 0.17 155);
+  --color-neutral-content: oklch(0.9 0.012 65);
+  --color-info: oklch(0.72 0.13 240);
+  --color-info-content: oklch(0.15 0.02 240);
+  --color-success: oklch(0.72 0.15 155);
   --color-success-content: oklch(0.15 0.02 155);
-  --color-warning: oklch(0.82 0.16 82);
-  --color-warning-content: oklch(0.20 0.04 82);
-  --color-error: oklch(0.63 0.22 25);
-  --color-error-content: oklch(0.99 0 0);
+  --color-warning: oklch(0.82 0.15 82);
+  --color-warning-content: oklch(0.2 0.04 82);
+  --color-error: oklch(0.68 0.19 25);
+  --color-error-content: oklch(0.15 0.02 25);
   --radius-selector: 0.5rem;
-  --radius-field: 0.375rem;
-  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.875rem;
   --border: 1px;
-  --depth: 1;
+  --depth: 0;
   --noise: 0;
+}
+
+/* ---- Design tokens that daisyUI does not cover ---- */
+
+:root {
+  --shadow-raise:
+    0 1px 2px oklch(0.25 0.03 55 / 0.06),
+    0 8px 24px -8px oklch(0.25 0.03 55 / 0.16);
+  --code-bg: oklch(0.975 0.006 70);
+  --diff-added-bg: oklch(0.95 0.05 150);
+  --diff-added-gutter: oklch(0.91 0.07 150);
+  --diff-added-fg: oklch(0.4 0.12 150);
+  --diff-removed-bg: oklch(0.95 0.04 25);
+  --diff-removed-gutter: oklch(0.91 0.06 25);
+  --diff-removed-fg: oklch(0.45 0.14 25);
+}
+
+[data-theme='hermit-dark'] {
+  --shadow-raise:
+    0 1px 2px oklch(0 0 0 / 0.3), 0 10px 28px -10px oklch(0 0 0 / 0.6);
+  --code-bg: oklch(0.185 0.014 55);
+  --diff-added-bg: oklch(0.28 0.05 150);
+  --diff-added-gutter: oklch(0.32 0.07 150);
+  --diff-added-fg: oklch(0.78 0.12 150);
+  --diff-removed-bg: oklch(0.28 0.05 25);
+  --diff-removed-gutter: oklch(0.32 0.07 25);
+  --diff-removed-fg: oklch(0.78 0.11 25);
 }
 
 html.theme-transition,
 html.theme-transition *,
 html.theme-transition *::before,
 html.theme-transition *::after {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease,
-    box-shadow 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    fill 0.3s ease,
+    stroke 0.3s ease !important;
+}
+
+/* Tailwind 4 defaults borders to currentColor; use the theme border instead. */
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--color-base-300);
+  }
 }
 
 body {
-  @apply m-0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  @apply m-0 font-sans;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family:
-    source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+code,
+kbd,
+pre {
+  font-family: var(--font-mono);
 }
 
-/* Diff view */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- App shell ---- */
+
+.app-header {
+  background: color-mix(in oklab, var(--color-base-100) 85%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.nav-active {
+  color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+
+.eyebrow {
+  @apply text-[0.6875rem] font-semibold uppercase tracking-widest text-base-content/50;
+}
+
+.hero-panel {
+  background:
+    radial-gradient(
+      60rem 18rem at 100% 0%,
+      color-mix(in oklab, var(--color-primary) 14%, transparent),
+      transparent 70%
+    ),
+    var(--color-base-100);
+}
+
+/* ---- Skill cards ---- */
+
+.skill-card {
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.skill-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
+  box-shadow: var(--shadow-raise);
+}
+
+.skill-avatar {
+  background: oklch(0.93 0.06 var(--avatar-hue));
+  color: oklch(0.42 0.13 var(--avatar-hue));
+}
+[data-theme='hermit-dark'] .skill-avatar {
+  background: oklch(0.34 0.07 var(--avatar-hue));
+  color: oklch(0.88 0.09 var(--avatar-hue));
+}
+
+/* ---- Code and commands ---- */
+
+.command-block,
+.code-surface {
+  background: var(--code-bg);
+}
+.command-block {
+  border: 1px solid var(--color-base-300);
+}
+/* Highlighted blocks must not pick up the inline `code` chip styling. */
+.prose .code-surface code,
+.code-surface code {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* ---- Tabs ---- */
+
+.tab-bar {
+  @apply flex gap-1 border-b border-base-300 overflow-x-auto;
+}
+.tab-item {
+  @apply px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 border-transparent -mb-px text-base-content/60 cursor-pointer transition-colors;
+}
+.tab-item:hover {
+  @apply text-base-content;
+}
+.tab-item-active {
+  @apply border-primary text-base-content font-semibold;
+}
+
+/* ---- File tree ---- */
+
+.tree-row {
+  @apply w-full flex items-center gap-1.5 pr-3 py-1.5 text-left text-[0.8125rem] font-mono text-base-content/80 cursor-pointer;
+}
+.tree-row:hover {
+  background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+}
+.tree-row-active,
+.tree-row-active:hover {
+  background: color-mix(in oklab, var(--color-primary) 14%, transparent);
+  color: var(--color-base-content);
+  box-shadow: inset 2px 0 0 var(--color-primary);
+}
+
+/* ---- Admin sidebar ---- */
+
+.side-link {
+  @apply flex items-center gap-2.5 rounded-field px-3 py-2 text-sm text-base-content/70 whitespace-nowrap transition-colors;
+}
+.side-link:hover {
+  @apply text-base-content;
+  background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+}
+.side-link-active,
+.side-link-active:hover {
+  @apply font-semibold text-primary;
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+}
+
+/* ---- Motion ---- */
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.toast-enter {
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+main > * {
+  animation: page-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter,
+  main > * {
+    animation: none;
+  }
+  .skill-card,
+  .skill-card:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ---- Markdown ---- */
+
+.prose {
+  --tw-prose-body: color-mix(
+    in oklab,
+    var(--color-base-content) 85%,
+    transparent
+  );
+  --tw-prose-headings: var(--color-base-content);
+  --tw-prose-lead: var(--color-base-content);
+  --tw-prose-links: var(--color-primary);
+  --tw-prose-bold: var(--color-base-content);
+  --tw-prose-counters: color-mix(
+    in oklab,
+    var(--color-base-content) 55%,
+    transparent
+  );
+  --tw-prose-bullets: color-mix(
+    in oklab,
+    var(--color-base-content) 35%,
+    transparent
+  );
+  --tw-prose-hr: var(--color-base-300);
+  --tw-prose-quotes: color-mix(
+    in oklab,
+    var(--color-base-content) 80%,
+    transparent
+  );
+  --tw-prose-quote-borders: var(--color-primary);
+  --tw-prose-captions: color-mix(
+    in oklab,
+    var(--color-base-content) 60%,
+    transparent
+  );
+  --tw-prose-code: var(--color-base-content);
+  --tw-prose-th-borders: var(--color-base-300);
+  --tw-prose-td-borders: var(--color-base-300);
+}
+.prose :where(a):not(:where([class~='not-prose'] *)) {
+  text-decoration: none;
+  font-weight: 500;
+}
+.prose :where(a):not(:where([class~='not-prose'] *)):hover {
+  text-decoration: underline;
+}
+.prose :where(code):not(:where([class~='not-prose'] *)) {
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  border-radius: 0.3rem;
+  padding: 0.15em 0.35em;
+  font-weight: 500;
+  font-size: 0.875em;
+}
+.prose :where(code):not(:where([class~='not-prose'] *))::before,
+.prose :where(code):not(:where([class~='not-prose'] *))::after {
+  content: none;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Diff view ---- */
+
 .diff-table {
   border-spacing: 0;
   line-height: 1.5;
@@ -109,7 +378,7 @@ code {
   min-width: 3.5em;
   padding: 0 6px;
   text-align: right;
-  color: oklch(0.55 0 0);
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
   user-select: none;
   font-size: 11px;
 }
@@ -124,49 +393,25 @@ code {
   width: 100%;
 }
 .diff-added {
-  background: oklch(0.93 0.08 150);
+  background: var(--diff-added-bg);
 }
 .diff-added .diff-gutter {
-  background: oklch(0.88 0.10 150);
-  color: oklch(0.40 0.12 150);
+  background: var(--diff-added-gutter);
+  color: var(--diff-added-fg);
 }
 .diff-added .diff-sign {
-  color: oklch(0.40 0.12 150);
+  color: var(--diff-added-fg);
 }
 .diff-removed {
-  background: oklch(0.93 0.06 25);
+  background: var(--diff-removed-bg);
 }
 .diff-removed .diff-gutter {
-  background: oklch(0.88 0.08 25);
-  color: oklch(0.45 0.12 25);
+  background: var(--diff-removed-gutter);
+  color: var(--diff-removed-fg);
 }
 .diff-removed .diff-sign {
-  color: oklch(0.45 0.12 25);
+  color: var(--diff-removed-fg);
 }
 .diff-context .diff-gutter {
-  background: oklch(0.96 0 0);
-}
-
-[data-theme='hermit-dark'] .diff-added {
-  background: oklch(0.28 0.06 150);
-}
-[data-theme='hermit-dark'] .diff-added .diff-gutter {
-  background: oklch(0.25 0.08 150);
-  color: oklch(0.70 0.12 150);
-}
-[data-theme='hermit-dark'] .diff-added .diff-sign {
-  color: oklch(0.70 0.12 150);
-}
-[data-theme='hermit-dark'] .diff-removed {
-  background: oklch(0.28 0.06 25);
-}
-[data-theme='hermit-dark'] .diff-removed .diff-gutter {
-  background: oklch(0.25 0.08 25);
-  color: oklch(0.70 0.10 25);
-}
-[data-theme='hermit-dark'] .diff-removed .diff-sign {
-  color: oklch(0.70 0.10 25);
-}
-[data-theme='hermit-dark'] .diff-context .diff-gutter {
-  background: oklch(0.22 0.02 55);
+  background: var(--code-bg);
 }

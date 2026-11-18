@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"hermit/internal/extauth"
 	"hermit/internal/storage"
 	"hermit/internal/store"
 
@@ -26,13 +28,13 @@ func (s *Service) BootstrapDefaults(ctx context.Context, ownerSubject, adminPass
 		return err
 	}
 
-	if err := s.store.UpsertRepoMember(ctx, hosted.ID, ownerSubject, store.RoleAdmin); err != nil {
+	if err := s.store.UpsertRepoMember(ctx, hosted.ID, ownerSubject, store.RoleAdmin, SystemActor); err != nil {
 		return err
 	}
-	if err := s.store.UpsertRepoMember(ctx, group.ID, ownerSubject, store.RoleAdmin); err != nil {
+	if err := s.store.UpsertRepoMember(ctx, group.ID, ownerSubject, store.RoleAdmin, SystemActor); err != nil {
 		return err
 	}
-	if err := s.store.UpsertRepoMember(ctx, group.ID, "*", store.RoleRead); err != nil {
+	if err := s.store.UpsertRepoMember(ctx, group.ID, WildcardSubject, store.RoleRead, SystemActor); err != nil {
 		return err
 	}
 	if err := s.store.AddGroupMember(ctx, group.ID, hosted.ID, 10); err != nil {
@@ -67,10 +69,10 @@ func (s *Service) BootstrapDefaults(ctx context.Context, ownerSubject, adminPass
 		if err != nil {
 			return err
 		}
-		if err := s.store.UpsertRepoMember(ctx, proxy.ID, ownerSubject, store.RoleAdmin); err != nil {
+		if err := s.store.UpsertRepoMember(ctx, proxy.ID, ownerSubject, store.RoleAdmin, SystemActor); err != nil {
 			return err
 		}
-		if err := s.store.UpsertRepoMember(ctx, proxy.ID, "*", store.RoleRead); err != nil {
+		if err := s.store.UpsertRepoMember(ctx, proxy.ID, WildcardSubject, store.RoleRead, SystemActor); err != nil {
 			return err
 		}
 		if err := s.store.AddGroupMember(ctx, group.ID, proxy.ID, 20+i); err != nil {
@@ -81,6 +83,9 @@ func (s *Service) BootstrapDefaults(ctx context.Context, ownerSubject, adminPass
 }
 
 func (s *Service) ensureAdminUser(ctx context.Context, username, password string) error {
+	if err := validateLocalUsername(username); err != nil {
+		return err
+	}
 	_, err := s.store.GetUserByUsername(ctx, username)
 	if err == nil {
 		return nil
@@ -133,12 +138,29 @@ func (s *Service) HasRepoPermission(ctx context.Context, repo store.Repository, 
 }
 
 // CreatePersonalToken creates a new personal access token for the given subject.
-func (s *Service) CreatePersonalToken(ctx context.Context, subject, name string, isAdmin bool) (string, store.APIToken, error) {
-	if strings.TrimSpace(subject) == "" {
+// expiresInDays: nil = default (90), 0 = never, otherwise one of AllowedPersonalTokenDays.
+// The subject must have a users row; tokens for unknown subjects would never authenticate.
+func (s *Service) CreatePersonalToken(ctx context.Context, subject, name string, expiresInDays *int) (string, store.APIToken, error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
 		return "", store.APIToken{}, fmt.Errorf("%w: subject required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(name) == "" {
 		return "", store.APIToken{}, fmt.Errorf("%w: token name required", ErrInvalidInput)
+	}
+	expiresAt, err := personalTokenExpiry(expiresInDays, time.Now().UTC())
+	if err != nil {
+		return "", store.APIToken{}, err
+	}
+	u, err := s.store.GetUserByUsername(ctx, subject)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", store.APIToken{}, fmt.Errorf("%w: %q has no user account", ErrInvalidInput, subject)
+		}
+		return "", store.APIToken{}, err
+	}
+	if u.Disabled {
+		return "", store.APIToken{}, fmt.Errorf("%w: user is disabled", ErrInvalidInput)
 	}
 
 	rawToken, err := generateToken(32)
@@ -148,7 +170,7 @@ func (s *Service) CreatePersonalToken(ctx context.Context, subject, name string,
 	sum := sha256.Sum256([]byte(rawToken))
 	hash := hex.EncodeToString(sum[:])
 
-	id, err := s.store.CreatePersonalToken(ctx, subject, strings.TrimSpace(name), hash, isAdmin)
+	id, err := s.store.CreatePersonalToken(ctx, subject, strings.TrimSpace(name), hash, u.IsAdmin, expiresAt)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return "", store.APIToken{}, ErrConflict
@@ -160,13 +182,14 @@ func (s *Service) CreatePersonalToken(ctx context.Context, subject, name string,
 		Subject:   subject,
 		Name:      strings.TrimSpace(name),
 		TokenType: store.TokenTypePersonal,
-		IsAdmin:   isAdmin,
+		IsAdmin:   u.IsAdmin,
+		ExpiresAt: expiresAt,
 	}
 	return rawToken, tok, nil
 }
 
 // IssueSessionToken creates or replaces the session token for a subject.
-// Used after successful LDAP authentication.
+// The token expires after the configured session TTL.
 func (s *Service) IssueSessionToken(ctx context.Context, subject string, isAdmin bool) (string, error) {
 	if strings.TrimSpace(subject) == "" {
 		return "", fmt.Errorf("%w: subject required", ErrInvalidInput)
@@ -179,10 +202,17 @@ func (s *Service) IssueSessionToken(ctx context.Context, subject string, isAdmin
 	sum := sha256.Sum256([]byte(rawToken))
 	hash := hex.EncodeToString(sum[:])
 
-	if err := s.store.UpsertSessionToken(ctx, subject, hash, isAdmin); err != nil {
+	if err := s.store.UpsertSessionToken(ctx, subject, hash, isAdmin, time.Now().UTC().Add(s.sessionTTL())); err != nil {
 		return "", err
 	}
 	return rawToken, nil
+}
+
+func (s *Service) sessionTTL() time.Duration {
+	if s.defaults.SessionTTL > 0 {
+		return s.defaults.SessionTTL
+	}
+	return DefaultSessionTTL
 }
 
 // ListMyTokens returns all personal access tokens for the given subject.
@@ -203,8 +233,8 @@ func (s *Service) RevokeToken(ctx context.Context, tokenID string, subject strin
 
 // RegisterUser creates a local user account with a bcrypt-hashed password.
 func (s *Service) RegisterUser(ctx context.Context, username, password, displayName, email string, isAdmin bool) (store.User, error) {
-	if strings.TrimSpace(username) == "" {
-		return store.User{}, fmt.Errorf("%w: username required", ErrInvalidInput)
+	if err := validateLocalUsername(username); err != nil {
+		return store.User{}, err
 	}
 	if len(password) < 6 {
 		return store.User{}, fmt.Errorf("%w: password must be at least 6 characters", ErrInvalidInput)
@@ -235,14 +265,44 @@ func (s *Service) LocalLogin(ctx context.Context, username, password string) (st
 		}
 		return "", store.User{}, err
 	}
+	if u.Source != store.UserSourceLocal {
+		return "", store.User{}, fmt.Errorf("invalid username or password")
+	}
 	if u.Disabled {
 		return "", store.User{}, fmt.Errorf("account disabled")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 		return "", store.User{}, fmt.Errorf("invalid username or password")
 	}
+	return s.startSession(ctx, u)
+}
+
+// LDAPLogin records an authenticated LDAP identity under the "ldap:" namespace
+// and issues a session token. Admin rights come from the users row.
+func (s *Service) LDAPLogin(ctx context.Context, identity extauth.IdentityResult) (string, store.User, error) {
+	if strings.TrimSpace(identity.Subject) == "" {
+		return "", store.User{}, fmt.Errorf("%w: empty LDAP subject", ErrInvalidInput)
+	}
+	u, err := s.store.UpsertLDAPUser(ctx, LDAPSubject(identity.Subject),
+		strings.TrimSpace(identity.DisplayName), strings.TrimSpace(identity.Email))
+	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return "", store.User{}, fmt.Errorf("%w: account name is already used by a local account", ErrConflict)
+		}
+		return "", store.User{}, err
+	}
+	if u.Disabled {
+		return "", store.User{}, fmt.Errorf("%w: account disabled", ErrForbidden)
+	}
+	return s.startSession(ctx, u)
+}
+
+func (s *Service) startSession(ctx context.Context, u store.User) (string, store.User, error) {
 	token, err := s.IssueSessionToken(ctx, u.Username, u.IsAdmin)
 	if err != nil {
+		return "", store.User{}, err
+	}
+	if err := s.store.TouchUserLogin(ctx, u.ID); err != nil {
 		return "", store.User{}, err
 	}
 	return token, u, nil
@@ -278,6 +338,16 @@ func (s *Service) ResetUserPassword(ctx context.Context, userID, newPassword str
 	if err != nil {
 		return fmt.Errorf("%w: invalid user ID", ErrInvalidInput)
 	}
+	u, err := s.store.GetUserByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if u.Source != store.UserSourceLocal {
+		return fmt.Errorf("%w: LDAP accounts have no local password", ErrInvalidInput)
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -292,25 +362,32 @@ func (s *Service) ResetUserPassword(ctx context.Context, userID, newPassword str
 }
 
 // ChangePassword verifies the caller's current password, then sets a new one.
-func (s *Service) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
+// Earlier sessions are invalidated; the returned token is the caller's new session.
+func (s *Service) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) (string, error) {
 	if len(newPassword) < 6 {
-		return fmt.Errorf("%w: password must be at least 6 characters", ErrInvalidInput)
+		return "", fmt.Errorf("%w: password must be at least 6 characters", ErrInvalidInput)
 	}
 	u, err := s.store.GetUserByUsername(ctx, strings.TrimSpace(username))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
+			return "", ErrNotFound
 		}
-		return err
+		return "", err
+	}
+	if u.Source != store.UserSourceLocal {
+		return "", fmt.Errorf("%w: LDAP accounts change their password in the directory", ErrInvalidInput)
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)); err != nil {
-		return fmt.Errorf("%w: current password is incorrect", ErrInvalidInput)
+		return "", fmt.Errorf("%w: current password is incorrect", ErrInvalidInput)
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+		return "", fmt.Errorf("hash password: %w", err)
 	}
-	return s.store.UpdateUserPassword(ctx, u.ID, string(hash))
+	if err := s.store.UpdateUserPassword(ctx, u.ID, string(hash)); err != nil {
+		return "", err
+	}
+	return s.IssueSessionToken(ctx, u.Username, u.IsAdmin)
 }
 
 // DeleteUser removes a local user account (admin only).
@@ -319,5 +396,11 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("%w: invalid user ID", ErrInvalidInput)
 	}
-	return s.store.DeleteUser(ctx, id)
+	if err := s.store.DeleteUser(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
 }

@@ -18,7 +18,10 @@ import (
 
 // getGroupMembers resolves group members filtered by the actor's permissions.
 func (s *Service) getGroupMembers(ctx context.Context, groupRepoID uuid.UUID, actor auth.Actor) ([]store.Repository, error) {
-	return s.store.ListAccessibleGroupMembers(ctx, groupRepoID, actor.Subject, actor.IsAdmin || actor.Anonymous)
+	if actor.Anonymous {
+		return nil, nil
+	}
+	return s.store.ListAccessibleGroupMembers(ctx, groupRepoID, actor.Subject, actor.IsAdmin)
 }
 
 func (s *Service) SearchSkills(ctx context.Context, repo store.Repository, actor auth.Actor, query string, limit int) ([]store.SkillSearchResult, error) {
@@ -291,12 +294,31 @@ func (s *Service) ReadSkillFile(
 	return nil, ErrNotFound
 }
 
-func (s *Service) DeleteSkill(ctx context.Context, repo store.Repository, slug string, deleted bool) error {
+// DeleteSkill soft-deletes or restores a skill. Allowed for global admins,
+// repository admins, and the skill's creator when they hold push rights.
+func (s *Service) DeleteSkill(ctx context.Context, repo store.Repository, actor auth.Actor, slug string, deleted bool) error {
 	slug = normalizeSlug(slug)
 	if slug == "" {
 		return fmt.Errorf("%w: slug required", ErrInvalidInput)
 	}
-	if err := s.store.SetSkillDeleted(ctx, repo.ID, slug, deleted); err != nil {
+	createdBy, err := s.store.GetSkillCreator(ctx, repo.ID, slug)
+	if err != nil {
+		if store.IsNotFound(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	role := ""
+	if !actor.IsAdmin {
+		role, err = s.store.GetRepoRole(ctx, repo.ID, actor.Subject)
+		if err != nil && !store.IsNotFound(err) {
+			return err
+		}
+	}
+	if !canManageSkill(actor.IsAdmin, role, createdBy, actor.Subject) {
+		return fmt.Errorf("%w: only the creator or a repository admin can change this skill", ErrForbidden)
+	}
+	if err := s.store.SetSkillDeleted(ctx, repo.ID, slug, deleted, actor.Subject); err != nil {
 		if store.IsNotFound(err) {
 			return ErrNotFound
 		}

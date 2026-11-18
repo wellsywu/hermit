@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   UserPlus,
   Shield,
   ShieldOff,
@@ -11,27 +10,28 @@ import {
   UserCog,
   Check,
   X,
-  AlertCircle,
   Users,
   Ban,
-  CheckCircle,
   Eye,
   EyeOff,
 } from 'lucide-react'
-import { userApi } from '#/api'
+import { subjectLabel, userApi } from '#/api'
 import type { APIError, LocalUser } from '#/api'
+import { PageHeader } from '#/components/ui/PageHeader'
+import { useFlash } from '#/components/ui/Toast'
+import { useT } from '#/i18n'
 
 export const Route = createFileRoute('/admin/users')({
   component: UserManagementPage,
 })
 
 function UserManagementPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingUser, setEditingUser] = useState<string | null>(null)
   const [resetPwUser, setResetPwUser] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
+  const { setError, setSuccess: flash } = useFlash()
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -40,65 +40,28 @@ function UserManagementPage() {
 
   const users = data?.users ?? []
 
-  const flash = (msg: string) => {
-    setSuccess(msg)
-    setError(null)
-    setTimeout(() => setSuccess(null), 3000)
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link to="/admin" className="btn btn-ghost btn-sm btn-circle">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold">User Management</h1>
-            <p className="text-sm text-base-content/60">
-              Create and manage local user accounts
-            </p>
-          </div>
-        </div>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => {
-            setShowCreateForm(!showCreateForm)
-            setError(null)
-          }}
-        >
-          <UserPlus className="h-4 w-4" />
-          New User
-        </button>
-      </div>
-
-      {/* Alerts */}
-      {error && (
-        <div className="alert alert-error text-sm">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
+      <PageHeader
+        title={t('Users')}
+        description={t('Create and manage local user accounts')}
+        actions={
           <button
-            className="btn btn-ghost btn-xs"
-            onClick={() => setError(null)}
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowCreateForm(!showCreateForm)}
           >
-            <X className="h-3 w-3" />
+            <UserPlus className="h-4 w-4" />
+            {t('New user')}
           </button>
-        </div>
-      )}
-      {success && (
-        <div className="alert alert-success text-sm">
-          <CheckCircle className="h-4 w-4 shrink-0" />
-          <span>{success}</span>
-        </div>
-      )}
+        }
+      />
 
       {/* Create user form */}
       {showCreateForm && (
         <CreateUserForm
           onSuccess={(username) => {
             setShowCreateForm(false)
-            flash(`User "${username}" created`)
+            flash(t('User “{name}” created', { name: username }))
             queryClient.invalidateQueries({ queryKey: ['admin-users'] })
           }}
           onError={(msg) => setError(msg)}
@@ -107,17 +70,15 @@ function UserManagementPage() {
       )}
 
       {/* User list */}
-      <div className="card bg-base-200 border">
+      <div className="card bg-base-100 border">
         <div className="card-body">
           <div className="flex items-center justify-between">
             <h2 className="card-title text-base">
               <Users className="h-4 w-4 text-primary" />
-              All Users
+              {t('All Users')}
             </h2>
             {users.length > 0 && (
-              <div className="badge badge-ghost badge-sm">
-                {users.length}
-              </div>
+              <div className="badge badge-ghost badge-sm">{users.length}</div>
             )}
           </div>
 
@@ -130,7 +91,7 @@ function UserManagementPage() {
           {!isLoading && users.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-base-content/40">
               <Users className="h-10 w-10" />
-              <p className="text-sm">No users yet</p>
+              <p className="text-sm">{t('No users yet')}</p>
             </div>
           )}
 
@@ -143,15 +104,11 @@ function UserManagementPage() {
                     isEditing={editingUser === u.id}
                     isResettingPw={resetPwUser === u.id}
                     onEdit={() => {
-                      setEditingUser(
-                        editingUser === u.id ? null : u.id,
-                      )
+                      setEditingUser(editingUser === u.id ? null : u.id)
                       setResetPwUser(null)
                     }}
                     onResetPw={() => {
-                      setResetPwUser(
-                        resetPwUser === u.id ? null : u.id,
-                      )
+                      setResetPwUser(resetPwUser === u.id ? null : u.id)
                       setEditingUser(null)
                     }}
                     onSuccess={(msg) => {
@@ -187,6 +144,7 @@ function CreateUserForm({
   onError: (msg: string) => void
   onCancel: () => void
 }) {
+  const t = useT()
   const [form, setForm] = useState({
     username: '',
     password: '',
@@ -203,11 +161,11 @@ function CreateUserForm({
   })
 
   return (
-    <div className="card bg-base-200 border">
+    <div className="card bg-base-100 border">
       <div className="card-body gap-4">
         <h3 className="card-title text-base">
           <UserPlus className="h-4 w-4 text-primary" />
-          Create New User
+          {t('Create New User')}
         </h3>
         <form
           onSubmit={(e) => {
@@ -217,29 +175,29 @@ function CreateUserForm({
           className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
           <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Username *</legend>
+            <legend className="fieldset-legend text-xs">
+              {t('Username *')}
+            </legend>
             <input
               type="text"
-              placeholder="e.g. alice"
+              placeholder={t('e.g. alice')}
               className="input input-bordered input-sm w-full"
               value={form.username}
-              onChange={(e) =>
-                setForm({ ...form, username: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
               required
             />
           </fieldset>
           <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Password *</legend>
+            <legend className="fieldset-legend text-xs">
+              {t('Password *')}
+            </legend>
             <div className="join w-full">
               <input
                 type={showPw ? 'text' : 'password'}
-                placeholder="Min 6 characters"
+                placeholder={t('Min 6 characters')}
                 className="input input-bordered input-sm join-item flex-1"
                 value={form.password}
-                onChange={(e) =>
-                  setForm({ ...form, password: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
                 minLength={6}
               />
@@ -257,10 +215,12 @@ function CreateUserForm({
             </div>
           </fieldset>
           <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Display Name</legend>
+            <legend className="fieldset-legend text-xs">
+              {t('Display Name')}
+            </legend>
             <input
               type="text"
-              placeholder="e.g. Alice Smith"
+              placeholder={t('e.g. Alice Smith')}
               className="input input-bordered input-sm w-full"
               value={form.display_name}
               onChange={(e) =>
@@ -269,15 +229,13 @@ function CreateUserForm({
             />
           </fieldset>
           <fieldset className="fieldset">
-            <legend className="fieldset-legend text-xs">Email</legend>
+            <legend className="fieldset-legend text-xs">{t('Email')}</legend>
             <input
               type="email"
-              placeholder="e.g. alice@company.com"
+              placeholder={t('e.g. alice@company.com')}
               className="input input-bordered input-sm w-full"
               value={form.email}
-              onChange={(e) =>
-                setForm({ ...form, email: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </fieldset>
           <div className="sm:col-span-2">
@@ -291,9 +249,11 @@ function CreateUserForm({
                 }
               />
               <div>
-                <span className="text-sm font-medium">Administrator</span>
+                <span className="text-sm font-medium">
+                  {t('Administrator')}
+                </span>
                 <p className="text-xs text-base-content/50">
-                  Full access to all admin features
+                  {t('Full access to all admin features')}
                 </p>
               </div>
             </label>
@@ -304,7 +264,7 @@ function CreateUserForm({
               className="btn btn-ghost btn-sm"
               onClick={onCancel}
             >
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="submit"
@@ -316,7 +276,7 @@ function CreateUserForm({
               ) : (
                 <UserPlus className="h-3.5 w-3.5" />
               )}
-              Create User
+              {t('Create User')}
             </button>
           </div>
         </form>
@@ -348,28 +308,32 @@ function UserRow({
   onCancelEdit: () => void
   onCancelReset: () => void
 }) {
+  const t = useT()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const deleteMutation = useMutation({
     mutationFn: () => userApi.remove(user.id),
-    onSuccess: () => onSuccess(`User "${user.username}" deleted`),
+    onSuccess: () =>
+      onSuccess(t('User “{name}” deleted', { name: user.username })),
     onError: (err: APIError) => onError(err.message),
   })
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${user.disabled
-        ? 'bg-base-100/50 border-base-300 opacity-60'
-        : 'bg-base-100 border-base-300 hover:border-base-content/20'
-        }`}
+      className={`rounded-lg border transition-colors ${
+        user.disabled
+          ? 'bg-base-100/50 border-base-300 opacity-60'
+          : 'bg-base-100 border-base-300 hover:border-base-content/20'
+      }`}
     >
       {/* Main row */}
       <div className="flex items-center gap-3 p-3">
         <div
-          className={`rounded-lg p-2 ${user.is_admin
-            ? 'bg-error/10 text-error'
-            : 'bg-primary/10 text-primary'
-            }`}
+          className={`rounded-lg p-2 ${
+            user.is_admin
+              ? 'bg-error/10 text-error'
+              : 'bg-primary/10 text-primary'
+          }`}
         >
           {user.is_admin ? (
             <Shield className="h-4 w-4" />
@@ -380,46 +344,54 @@ function UserRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-medium text-sm truncate">
-              {user.username}
+              {subjectLabel(user.username)}
             </p>
+            {user.source === 'ldap' && (
+              <span className="badge badge-info badge-xs">LDAP</span>
+            )}
             {user.is_admin && (
-              <span className="badge badge-error badge-xs">Admin</span>
+              <span className="badge badge-error badge-xs">{t('Admin')}</span>
             )}
             {user.disabled && (
               <span className="badge badge-warning badge-xs">
-                Disabled
+                {t('Disabled')}
               </span>
             )}
           </div>
           <div className="flex items-center gap-3 text-xs text-base-content/50 mt-0.5">
             {user.display_name && <span>{user.display_name}</span>}
-            {user.email && (
-              <span className="truncate">{user.email}</span>
-            )}
+            {user.email && <span className="truncate">{user.email}</span>}
             <span>
-              Joined{' '}
-              {new Date(user.created_at).toLocaleDateString()}
+              {t('Joined')} {new Date(user.created_at).toLocaleDateString()}
+            </span>
+            <span>
+              {user.last_login_at
+                ? `${t('Last login')} ${new Date(user.last_login_at).toLocaleString()}`
+                : t('Never logged in')}
             </span>
           </div>
         </div>
         <div className="flex gap-1">
           <button
             className="btn btn-ghost btn-xs tooltip"
-            data-tip="Edit"
+            data-tip={t('Edit')}
             onClick={onEdit}
           >
             <UserCog className="h-3.5 w-3.5" />
           </button>
-          <button
-            className="btn btn-ghost btn-xs tooltip"
-            data-tip="Reset password"
-            onClick={onResetPw}
-          >
-            <KeyRound className="h-3.5 w-3.5" />
-          </button>
+          {/* LDAP accounts have no local password. */}
+          {user.source === 'local' && (
+            <button
+              className="btn btn-ghost btn-xs tooltip"
+              data-tip={t('Reset password')}
+              onClick={onResetPw}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+            </button>
+          )}
           {confirmDelete ? (
             <div className="flex items-center gap-1">
-              <span className="text-xs text-error">Delete?</span>
+              <span className="text-xs text-error">{t('Delete?')}</span>
               <button
                 className="btn btn-error btn-xs"
                 onClick={() => deleteMutation.mutate()}
@@ -437,7 +409,7 @@ function UserRow({
           ) : (
             <button
               className="btn btn-ghost btn-xs text-error tooltip"
-              data-tip="Delete"
+              data-tip={t('Delete')}
               onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -482,6 +454,7 @@ function EditUserPanel({
   onError: (msg: string) => void
   onCancel: () => void
 }) {
+  const t = useT()
   const [form, setForm] = useState({
     display_name: user.display_name,
     email: user.email,
@@ -491,7 +464,8 @@ function EditUserPanel({
 
   const mutation = useMutation({
     mutationFn: () => userApi.update(user.id, form),
-    onSuccess: () => onSuccess(`User "${user.username}" updated`),
+    onSuccess: () =>
+      onSuccess(t('User “{name}” updated', { name: user.username })),
     onError: (err: APIError) => onError(err.message),
   })
 
@@ -505,25 +479,23 @@ function EditUserPanel({
         className="grid grid-cols-1 sm:grid-cols-2 gap-3"
       >
         <fieldset className="fieldset">
-          <legend className="fieldset-legend text-xs">Display Name</legend>
+          <legend className="fieldset-legend text-xs">
+            {t('Display Name')}
+          </legend>
           <input
             type="text"
             className="input input-bordered input-sm w-full"
             value={form.display_name}
-            onChange={(e) =>
-              setForm({ ...form, display_name: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, display_name: e.target.value })}
           />
         </fieldset>
         <fieldset className="fieldset">
-          <legend className="fieldset-legend text-xs">Email</legend>
+          <legend className="fieldset-legend text-xs">{t('Email')}</legend>
           <input
             type="email"
             className="input input-bordered input-sm w-full"
             value={form.email}
-            onChange={(e) =>
-              setForm({ ...form, email: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
         </fieldset>
         <div className="flex gap-6 sm:col-span-2">
@@ -532,13 +504,11 @@ function EditUserPanel({
               type="checkbox"
               className="toggle toggle-sm toggle-primary"
               checked={form.is_admin}
-              onChange={(e) =>
-                setForm({ ...form, is_admin: e.target.checked })
-              }
+              onChange={(e) => setForm({ ...form, is_admin: e.target.checked })}
             />
             <span className="text-sm flex items-center gap-1">
               <Shield className="h-3.5 w-3.5" />
-              Admin
+              {t('Admin')}
             </span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -546,9 +516,7 @@ function EditUserPanel({
               type="checkbox"
               className="toggle toggle-sm toggle-warning"
               checked={form.disabled}
-              onChange={(e) =>
-                setForm({ ...form, disabled: e.target.checked })
-              }
+              onChange={(e) => setForm({ ...form, disabled: e.target.checked })}
             />
             <span className="text-sm flex items-center gap-1">
               {form.disabled ? (
@@ -556,7 +524,7 @@ function EditUserPanel({
               ) : (
                 <ShieldOff className="h-3.5 w-3.5" />
               )}
-              Disabled
+              {t('Disabled')}
             </span>
           </label>
         </div>
@@ -566,7 +534,7 @@ function EditUserPanel({
             className="btn btn-ghost btn-xs"
             onClick={onCancel}
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="submit"
@@ -578,7 +546,7 @@ function EditUserPanel({
             ) : (
               <Check className="h-3 w-3" />
             )}
-            Save
+            {t('Save')}
           </button>
         </div>
       </form>
@@ -599,13 +567,14 @@ function ResetPasswordPanel({
   onError: (msg: string) => void
   onCancel: () => void
 }) {
+  const t = useT()
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
 
   const mutation = useMutation({
     mutationFn: () => userApi.resetPassword(user.id, password),
     onSuccess: () =>
-      onSuccess(`Password reset for "${user.username}"`),
+      onSuccess(t('Password reset for “{name}”', { name: user.username })),
     onError: (err: APIError) => onError(err.message),
   })
 
@@ -620,12 +589,12 @@ function ResetPasswordPanel({
       >
         <fieldset className="fieldset flex-1">
           <legend className="fieldset-legend text-xs">
-            New password for <strong>{user.username}</strong>
+            {t('New password for')} <strong>{user.username}</strong>
           </legend>
           <div className="join w-full">
             <input
               type={showPw ? 'text' : 'password'}
-              placeholder="Min 6 characters"
+              placeholder={t('Min 6 characters')}
               className="input input-bordered input-sm join-item flex-1"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -648,7 +617,7 @@ function ResetPasswordPanel({
               className="btn btn-ghost btn-sm"
               onClick={onCancel}
             >
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="submit"
@@ -660,11 +629,10 @@ function ResetPasswordPanel({
               ) : (
                 <KeyRound className="h-3.5 w-3.5" />
               )}
-              Reset
+              {t('Reset')}
             </button>
           </div>
         </fieldset>
-
       </form>
     </div>
   )

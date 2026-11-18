@@ -45,6 +45,10 @@ func main() {
 	}
 	defer pool.Close()
 
+	if err := db.Migrate(ctx, pool); err != nil {
+		log.Fatalf("migrate database: %v", err)
+	}
+
 	blobStore, err := initBlobStorage(ctx, cfg)
 	if err != nil {
 		log.Fatalf("init storage: %v", err)
@@ -61,6 +65,7 @@ func main() {
 			GroupRepo:      cfg.DefaultGroupRepo,
 			ProxyRepo:      cfg.DefaultProxyRepo,
 			ProxyUpstreams: cfg.ProxyUpstreamURLs,
+			SessionTTL:     cfg.SessionTTL,
 		},
 	)
 	if cfg.BootstrapDefaults {
@@ -86,7 +91,10 @@ func main() {
 	runner := proxysync.NewRunner(svc, factory, log.Default())
 	syncTrigger := httpapi.NewSyncTrigger(runner, svc, cfg.ProxySyncPageSize, log.Default())
 
-	authn := auth.NewAuthenticator(pool, cfg.AdminToken)
+	authn := auth.NewAuthenticator(st, cfg.AdminToken)
+	if cfg.AdminToken == "" {
+		log.Printf("ADMIN_TOKEN not set: static admin token disabled")
+	}
 
 	api := httpapi.New(cfg, svc, authn, syncTrigger, cfg.WebDir)
 	echoServer := api.NewEcho()

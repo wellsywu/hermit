@@ -10,10 +10,10 @@ import (
 
 // Config holds runtime configuration for the API server.
 type Config struct {
-	ListenAddr           string
-	DatabaseURL          string
-	StorageBackend       string // "local" (default) or "s3"
-	StorageRoot          string // local backend root dir
+	ListenAddr     string
+	DatabaseURL    string
+	StorageBackend string // "local" (default) or "s3"
+	StorageRoot    string // local backend root dir
 
 	// S3-compatible storage
 	S3Endpoint        string
@@ -27,7 +27,8 @@ type Config struct {
 	// Frontend SPA directory (empty = disabled)
 	WebDir string
 
-	AdminToken           string
+	AdminToken           string        // optional static super-admin token; empty disables it
+	SessionTTL           time.Duration // lifetime of login session tokens
 	CORSAllowedOrigins   []string
 	DefaultHostedRepo    string
 	DefaultGroupRepo     string
@@ -67,7 +68,8 @@ func Load() (Config, error) {
 		ListenAddr:           getenv("LISTEN_ADDR", ":8080"),
 		DatabaseURL:          getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/hermit?sslmode=disable"),
 		StorageRoot:          getenv("STORAGE_ROOT", "./data"),
-		AdminToken:           getenv("ADMIN_TOKEN", "dev-admin-token"),
+		AdminToken:           strings.TrimSpace(getenv("ADMIN_TOKEN", "")),
+		SessionTTL:           getenvDuration("SESSION_TTL", 168*time.Hour),
 		DefaultHostedRepo:    getenv("DEFAULT_HOSTED_REPO", "hosted"),
 		DefaultGroupRepo:     getenv("DEFAULT_GROUP_REPO", "group"),
 		DefaultProxyRepo:     getenv("DEFAULT_PROXY_REPO", "proxy"),
@@ -108,8 +110,11 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.StorageRoot) == "" {
 		return Config{}, fmt.Errorf("STORAGE_ROOT cannot be empty")
 	}
-	if strings.TrimSpace(cfg.AdminToken) == "" {
-		return Config{}, fmt.Errorf("ADMIN_TOKEN cannot be empty")
+	if err := validateAdminToken(cfg.AdminToken); err != nil {
+		return Config{}, err
+	}
+	if cfg.SessionTTL <= 0 {
+		return Config{}, fmt.Errorf("SESSION_TTL must be positive")
 	}
 	if cfg.ProxySyncPageSize <= 0 {
 		cfg.ProxySyncPageSize = 100
@@ -135,6 +140,31 @@ func Load() (Config, error) {
 	cfg.AdminPassword = getenv("ADMIN_PASSWORD", "")
 
 	return cfg, nil
+}
+
+// MinAdminTokenLength is the minimum length accepted for ADMIN_TOKEN.
+const MinAdminTokenLength = 32
+
+// knownWeakAdminTokens are values that have shipped in examples and must never be used.
+var knownWeakAdminTokens = map[string]bool{
+	"dev-admin-token": true,
+	"changeme":        true,
+	"admin":           true,
+}
+
+// validateAdminToken allows an empty token (static admin disabled) but rejects
+// known example values and short tokens.
+func validateAdminToken(token string) error {
+	if token == "" {
+		return nil
+	}
+	if knownWeakAdminTokens[strings.ToLower(token)] {
+		return fmt.Errorf("ADMIN_TOKEN uses a known example value; set a random value (e.g. openssl rand -hex 32) or leave it empty to disable")
+	}
+	if len(token) < MinAdminTokenLength {
+		return fmt.Errorf("ADMIN_TOKEN must be at least %d characters", MinAdminTokenLength)
+	}
+	return nil
 }
 
 func getenv(key, fallback string) string {

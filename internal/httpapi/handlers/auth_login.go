@@ -69,16 +69,16 @@ func (h *Handler) LDAPLogin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 	}
 
-	token, err := h.svc.IssueSessionToken(ctx, identity.Subject, identity.IsAdmin)
+	token, user, err := h.svc.LDAPLogin(ctx, *identity)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
+		return mapServiceError(err)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"token":        token,
-		"subject":      identity.Subject,
-		"display_name": identity.DisplayName,
-		"email":        identity.Email,
-		"is_admin":     identity.IsAdmin,
+		"subject":      user.Username,
+		"display_name": user.DisplayName,
+		"email":        user.Email,
+		"is_admin":     user.IsAdmin,
 	})
 }

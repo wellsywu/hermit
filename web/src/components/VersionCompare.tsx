@@ -14,6 +14,7 @@ import {
 import { api } from '#/api'
 import type { SkillVersionSummary, SkillFile } from '#/api'
 import { SkeletonLines } from './SkeletonLines'
+import { msg, useT } from '#/i18n'
 
 type FileStatus = 'added' | 'removed' | 'modified' | 'unchanged'
 
@@ -72,7 +73,9 @@ function computeDiffFiles(
     removed: 2,
     unchanged: 3,
   }
-  result.sort((a, b) => order[a.status] - order[b.status] || a.path.localeCompare(b.path))
+  result.sort(
+    (a, b) => order[a.status] - order[b.status] || a.path.localeCompare(b.path),
+  )
   return result
 }
 
@@ -80,10 +83,18 @@ const STATUS_CONFIG: Record<
   FileStatus,
   { icon: typeof FileEdit; label: string; badgeClass: string }
 > = {
-  added: { icon: FilePlus2, label: 'Added', badgeClass: 'badge-success' },
-  removed: { icon: FileX2, label: 'Removed', badgeClass: 'badge-error' },
-  modified: { icon: FileEdit, label: 'Modified', badgeClass: 'badge-warning' },
-  unchanged: { icon: Equal, label: 'Unchanged', badgeClass: 'badge-ghost' },
+  added: { icon: FilePlus2, label: msg('Added'), badgeClass: 'badge-success' },
+  removed: { icon: FileX2, label: msg('Removed'), badgeClass: 'badge-error' },
+  modified: {
+    icon: FileEdit,
+    label: msg('Modified'),
+    badgeClass: 'badge-warning',
+  },
+  unchanged: {
+    icon: Equal,
+    label: msg('Unchanged'),
+    badgeClass: 'badge-ghost',
+  },
 }
 
 export function VersionCompare({
@@ -95,17 +106,15 @@ export function VersionCompare({
   versions: SkillVersionSummary[]
   latestVersion?: string
 }) {
+  const t = useT()
   const sortedVersions = useMemo(
     () => [...versions].sort((a, b) => b.createdAt - a.createdAt),
     [versions],
   )
 
-  const latestIdx = sortedVersions.findIndex(
-    (v) => v.version === latestVersion,
-  )
+  const latestIdx = sortedVersions.findIndex((v) => v.version === latestVersion)
   const defaultNew = sortedVersions[latestIdx >= 0 ? latestIdx : 0]?.version
-  const defaultOld =
-    sortedVersions[latestIdx >= 0 ? latestIdx + 1 : 1]?.version
+  const defaultOld = sortedVersions[latestIdx >= 0 ? latestIdx + 1 : 1]?.version
 
   const [newVersion, setNewVersion] = useState<string | undefined>(defaultNew)
   const [oldVersion, setOldVersion] = useState<string | undefined>(defaultOld)
@@ -138,8 +147,12 @@ export function VersionCompare({
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2 text-base-content/40">
         <FileText className="h-8 w-8" />
-        <p className="text-sm font-medium">Not enough versions to compare</p>
-        <p className="text-xs">Publish at least 2 versions to use compare.</p>
+        <p className="text-sm font-medium">
+          {t('Not enough versions to compare')}
+        </p>
+        <p className="text-xs">
+          {t('Publish at least 2 versions to use compare.')}
+        </p>
       </div>
     )
   }
@@ -149,17 +162,19 @@ export function VersionCompare({
       {/* Version selectors */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-base-content/50">Base</span>
+          <span className="text-xs font-medium text-base-content/50">
+            {t('Base')}
+          </span>
           <select
             className="select select-bordered select-sm font-mono text-xs"
             value={newVersion ?? ''}
             onChange={(e) => setNewVersion(e.target.value || undefined)}
           >
-            <option value="">Select version</option>
+            <option value="">{t('Select version')}</option>
             {sortedVersions.map((v) => (
               <option key={v.version} value={v.version}>
                 v{v.version}
-                {v.version === latestVersion ? ' (latest)' : ''}
+                {v.version === latestVersion ? t(' (latest)') : ''}
               </option>
             ))}
           </select>
@@ -169,14 +184,14 @@ export function VersionCompare({
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-base-content/50">
-            Compare
+            {t('Compare')}
           </span>
           <select
             className="select select-bordered select-sm font-mono text-xs"
             value={oldVersion ?? ''}
             onChange={(e) => setOldVersion(e.target.value || undefined)}
           >
-            <option value="">Select version</option>
+            <option value="">{t('Select version')}</option>
             {sortedVersions.map((v) => (
               <option key={v.version} value={v.version}>
                 v{v.version}
@@ -199,24 +214,24 @@ export function VersionCompare({
             {stats.modified > 0 && (
               <span className="flex items-center gap-1">
                 <FileEdit className="h-3.5 w-3.5 text-warning" />
-                {stats.modified} modified
+                {stats.modified} {t('modified')}
               </span>
             )}
             {stats.added > 0 && (
               <span className="flex items-center gap-1">
                 <FilePlus2 className="h-3.5 w-3.5 text-success" />
-                {stats.added} added
+                {stats.added} {t('added')}
               </span>
             )}
             {stats.removed > 0 && (
               <span className="flex items-center gap-1">
                 <FileX2 className="h-3.5 w-3.5 text-error" />
-                {stats.removed} removed
+                {stats.removed} {t('removed')}
               </span>
             )}
             {changedFiles.length === 0 && (
               <span className="text-base-content/40">
-                No differences found between these versions
+                {t('No differences found between these versions')}
               </span>
             )}
           </div>
@@ -250,6 +265,7 @@ function FileDiffPanel({
   oldVersion: string
   newVersion: string
 }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(true)
   const cfg = STATUS_CONFIG[file.status]
   const Icon = cfg.icon
@@ -298,7 +314,7 @@ function FileDiffPanel({
         <Icon className="h-3.5 w-3.5 shrink-0" />
         <span className="font-mono text-xs truncate">{file.path}</span>
         <span className={`badge badge-xs ${cfg.badgeClass} ml-1`}>
-          {cfg.label}
+          {t(cfg.label)}
         </span>
         {lineStats.added > 0 && (
           <span className="text-[11px] font-mono text-success ml-auto">
@@ -316,7 +332,7 @@ function FileDiffPanel({
         <div className="overflow-x-auto">
           {changes === null ? (
             <div className="px-4 py-3 text-xs text-base-content/40 italic">
-              No changes in content
+              {t('No changes in content')}
             </div>
           ) : (
             <DiffView changes={changes} />

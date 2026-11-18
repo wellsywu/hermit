@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react'
 import type { ReactNode } from 'react'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -34,7 +40,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved
+    if (saved === 'light' || saved === 'dark' || saved === 'system')
+      return saved
     return 'system'
   })
   const [isDark, setIsDark] = useState(() => resolveDark(mode))
@@ -65,9 +72,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <ThemeContext value={{ mode, isDark, setMode }}>
-      {children}
-    </ThemeContext>
+    <ThemeContext value={{ mode, isDark, setMode }}>{children}</ThemeContext>
   )
 }
 

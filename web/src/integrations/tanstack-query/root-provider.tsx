@@ -17,8 +17,9 @@ export function getContext() {
     defaultOptions: {
       queries: {
         retry: (failureCount, error) => {
-          if (error instanceof APIError && error.status === 401) return false
-          return failureCount < 3
+          // Client errors (401, 403, 404…) will not fix themselves on retry.
+          if (error instanceof APIError && error.status < 500) return false
+          return failureCount < 2
         },
       },
     },

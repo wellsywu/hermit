@@ -23,6 +23,8 @@ func mapServiceError(err error) error {
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrConflict):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrForbidden):
+		return echo.NewHTTPError(http.StatusForbidden, err.Error())
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
